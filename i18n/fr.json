@@ -1,0 +1,9 @@
+{
+    "@metadata": { "authors": ["Onika", "Christian"] },
+    "nsfwblur-desc": "Floute les images dont la description du fichier contient '__NSFW__', selon la préférence de l'utilisateur.",
+    "nsfwblur-toggle-on": "Flou NSFW : ACTIVÉ (voir Préférences)",
+    "nsfwblur-toggle-off": "Flou NSFW : DÉSACTIVÉ (voir Préférences)",
+    "nsfwblur-toggle-tip": "Pour modifier, allez dans Préférences → Apparence → Fichiers",
+    "nsfwblur-pref-dob": "Date de naissance (nécessaire pour le contenu NSFW)",
+    "tog-displayfiltered": "Afficher les images filtrées"
+}

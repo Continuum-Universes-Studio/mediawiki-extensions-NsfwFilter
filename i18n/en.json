@@ -1,0 +1,9 @@
+{
+    "@metadata": { "authors": ["Onika", "Christian"] },
+    "nsfwblur-desc": "Blurs images whose file description contains '__NSFW__', respecting user profile preference.",
+    "nsfwblur-toggle-on": "NSFW Blur: ON (see Preferences)",
+    "nsfwblur-toggle-off": "NSFW Blur: OFF (see Preferences)",
+    "nsfwblur-toggle-tip": "To change this, go to Preferences → Appearance → Files",
+    "nsfwblur-pref-dob": "Date of birth (required for NSFW content)",
+    "tog-displayfiltered": "Display filtered images"
+}

@@ -1,0 +1,9 @@
+{
+    "@metadata": { "authors": ["Onika", "Christian"] },
+    "nsfwblur-desc": "Difumina imágenes cuya descripción del archivo contiene '__NSFW__', respetando la preferencia del usuario.",
+    "nsfwblur-toggle-on": "Difuminar NSFW: ACTIVADO (ver Preferencias)",
+    "nsfwblur-toggle-off": "Difuminar NSFW: DESACTIVADO (ver Preferencias)",
+    "nsfwblur-toggle-tip": "Para cambiar esto, ve a Preferencias → Apariencia → Archivos",
+    "nsfwblur-pref-dob": "Fecha de nacimiento (requerida para contenido NSFW)",
+    "tog-displayfiltered": "Mostrar imágenes filtradas"
+}

@@ -1,0 +1,16 @@
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# IDE/workspace files
+*.sublime*
+*.swp
+*.bak
+.idea/
+.vscode/
+*.iml
+
+# Composer stuff (if you add composer later)
+vendor/
+
+# No need to ignore extension files; it's a pure code repo

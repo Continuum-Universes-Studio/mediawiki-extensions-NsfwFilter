@@ -1,0 +1,9 @@
+{
+    "@metadata": { "authors": ["Onika", "Christian"] },
+    "nsfwblur-desc": "Desfoca imagens cuja descrição de arquivo contém '__NSFW__', respeitando a preferência do usuário.",
+    "nsfwblur-toggle-on": "Desfoque NSFW: ATIVADO (veja Preferências)",
+    "nsfwblur-toggle-off": "Desfoque NSFW: DESATIVADO (veja Preferências)",
+    "nsfwblur-toggle-tip": "Para alterar, vá para Preferências → Aparência → Arquivos",
+    "nsfwblur-pref-dob": "Data de nascimento (necessária para conteúdo NSFW)",
+    "tog-displayfiltered": "Exibir imagens filtradas"
+}

@@ -1,0 +1,42 @@
+{
+    "name": "NSFWBlur",
+    "version": "1.0",
+    "author": "Onika, Christian Daniel Jensen",
+    "url": "https://www.continuum-universes.com/",
+    "descriptionmsg": "nsfwblur-desc",
+    "type": "other",
+    "manifest_version": 2,
+    "requires": {
+        "MediaWiki": ">= 1.35.0"
+    },
+    "ResourceModules": {
+        "ext.nsfwblur": {
+            "styles": [
+                "modules/nsfw-blur.css"
+            ],
+            "scripts": [
+                "modules/nsfw-blur.js"
+            ],
+            "messages": [
+                "nsfwblur-toggle-on",
+                "nsfwblur-toggle-off",
+                "nsfwblur-toggle-tip"
+            ],
+            "targets": [
+                "desktop",
+                "mobile"
+            ]
+        }
+    },
+    "MessagesDirs": {
+        "NSFWBlur": [
+            "i18n"
+        ]
+    },
+    "Hooks": {
+        "BeforePageDisplay": [
+            "NSFWBlurHooks::onBeforePageDisplay"
+        ]
+    },
+    "manifest_version": 2
+}

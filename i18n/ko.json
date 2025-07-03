@@ -1,0 +1,9 @@
+{
+    "@metadata": { "authors": ["Onika", "Christian"] },
+    "nsfwblur-desc": "'__NSFW__'가 포함된 파일 설명의 이미지를 블러 처리하며, 사용자 설정을 따릅니다.",
+    "nsfwblur-toggle-on": "NSFW 블러: 켬 (환경설정 참조)",
+    "nsfwblur-toggle-off": "NSFW 블러: 끔 (환경설정 참조)",
+    "nsfwblur-toggle-tip": "변경하려면 환경설정 → 모양 → 파일로 이동하세요.",
+    "nsfwblur-pref-dob": "생년월일 (NSFW 콘텐츠에 필요)",
+    "tog-displayfiltered": "필터링된 이미지 표시"
+}

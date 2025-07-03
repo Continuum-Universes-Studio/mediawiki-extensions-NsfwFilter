@@ -1,0 +1,9 @@
+{
+    "@metadata": { "authors": ["Onika", "Christian"] },
+    "nsfwblur-desc": "模糊文件描述中包含'__NSFW__'的图片，遵循用户偏好。",
+    "nsfwblur-toggle-on": "NSFW模糊：开启（见偏好设置）",
+    "nsfwblur-toggle-off": "NSFW模糊：关闭（见偏好设置）",
+    "nsfwblur-toggle-tip": "要更改，请转到偏好设置 → 外观 → 文件",
+    "nsfwblur-pref-dob": "出生日期（需要用于NSFW内容）",
+    "tog-displayfiltered": "显示过滤后的图片"
+}

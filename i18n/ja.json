@@ -1,0 +1,9 @@
+{
+    "@metadata": { "authors": ["Onika", "Christian"] },
+    "nsfwblur-desc": "ファイルの説明に '__NSFW__' が含まれる画像をユーザーの設定に従ってぼかします。",
+    "nsfwblur-toggle-on": "NSFWぼかし：オン（設定を参照）",
+    "nsfwblur-toggle-off": "NSFWぼかし：オフ（設定を参照）",
+    "nsfwblur-toggle-tip": "変更するには設定 → 外観 → ファイルへ",
+    "nsfwblur-pref-dob": "生年月日（NSFWコンテンツに必要）",
+    "tog-displayfiltered": "フィルタリングされた画像を表示"
+}
