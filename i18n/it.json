@@ -5,5 +5,5 @@
     "nsfwblur-toggle-off": "Sfocatura NSFW: DISATTIVA (vedi Preferenze)",
     "nsfwblur-toggle-tip": "Per cambiare, vai su Preferenze → Aspetto → File",
     "nsfwblur-pref-dob": "Data di nascita (richiesta per contenuti NSFW)",
-    "tog-displayfiltered": "Visualizza immagini filtrate"
+    "tog-nsfwblurred": "Visualizza immagini filtrate"
 }

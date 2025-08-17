@@ -5,5 +5,5 @@
     "nsfwblur-toggle-off": "NSFWぼかし：オフ（設定を参照）",
     "nsfwblur-toggle-tip": "変更するには設定 → 外観 → ファイルへ",
     "nsfwblur-pref-dob": "生年月日（NSFWコンテンツに必要）",
-    "tog-displayfiltered": "フィルタリングされた画像を表示"
+    "tog-nsfwblurred": "フィルタリングされた画像を表示"
 }

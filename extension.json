@@ -1,26 +1,27 @@
 {
     "name": "NSFWBlur",
-    "version": "1.0",
+    "version": "1.4.0",
     "author": "Onika, Christian Daniel Jensen",
-    "url": "https://www.continuum-universes.com/",
+    "url": "https://www.vector-universes.com/",
     "descriptionmsg": "nsfwblur-desc",
     "type": "other",
     "manifest_version": 2,
     "requires": {
         "MediaWiki": ">= 1.35.0"
     },
+    "AutoloadClasses": {
+        "NSFWBlur\\Hooks": "includes/Hooks.php"
+    },
     "ResourceModules": {
         "ext.nsfwblur": {
+            "dependencies": [ "user.options" ],
+            "localBasePath": ".",
+            "remoteExtPath": "NSFWFilter",
             "styles": [
                 "modules/nsfw-blur.css"
             ],
             "scripts": [
                 "modules/nsfw-blur.js"
-            ],
-            "messages": [
-                "nsfwblur-toggle-on",
-                "nsfwblur-toggle-off",
-                "nsfwblur-toggle-tip"
             ],
             "targets": [
                 "desktop",
@@ -33,10 +34,21 @@
             "i18n"
         ]
     },
+    "DefaultUserOptions": {
+        "nsfwblurred": false
+    },
     "Hooks": {
         "BeforePageDisplay": [
-            "NSFWBlurHooks::onBeforePageDisplay"
+            "NSFWBlur\\Hooks::onBeforePageDisplay"
+        ],
+        "ImageBeforeProduceHTML": [
+            "NSFWBlur\\Hooks::onImageBeforeProduceHTML"
+        ],
+        "GetPreferences": [
+            "NSFWBlur\\Hooks::onGetPreferences"
+        ],
+        "PageRenderingHash": [
+            "NSFWBlur\\Hooks::onPageRenderingHash"
         ]
-    },
-    "manifest_version": 2
+    }
 }

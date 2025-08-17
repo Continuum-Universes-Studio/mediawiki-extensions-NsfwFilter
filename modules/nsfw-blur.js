@@ -1,15 +1,30 @@
 (function() {
     var userLoggedIn = mw.config.get('wgUserName') !== null;
-    var blurEnabled = mw.user.options.get('displayfiltered') ? false : true;
-    var dob = mw.user.options.get('nsfw_dateofbirth');
+    
+    var blurPref = mw.user.options.get('nsfwblurred');
+    var blurEnabled = blurPref === null ? true : !blurPref;
+
+    var birthYear = mw.config.get('wgPrivateBirthYear');
     var isOldEnough = false;
+    var now = new Date();
+    var thisYear = now.getFullYear();
+
+    if (birthYear && /^\d{4}$/.test(birthYear)) {
+        var age = thisYear - parseInt(birthYear, 10);
+        isOldEnough = age >= 18;
+    }
+    if (!userLoggedIn || !isOldEnough || isOldEnough && blurPref === 1) {
+        blurEnabled = true;
+    }
 
     function msg(name) {
-        // ResourceLoader messages
         return mw.message(name).plain();
     }
 
+    // (Optional) Add a button for toggling filter (for adults only)
     function addToggleButton() {
+        if (!userLoggedIn || !isOldEnough) return; // Only allow 18+ to toggle
+
         var btn = document.createElement('button');
         btn.id = 'nsfw-blur-toggle-btn';
         btn.style.position = 'fixed';
@@ -25,12 +40,10 @@
         btn.style.boxShadow = '0 2px 7px rgba(0,0,0,0.15)';
         btn.style.opacity = '0.88';
         btn.style.cursor = 'pointer';
-        btn.textContent = blurEnabled
-            ? msg('nsfwblur-toggle-on')
-            : msg('nsfwblur-toggle-off');
+        btn.textContent = blurEnabled ? msg('nsfwblur-toggle-on') : msg('nsfwblur-toggle-off');
         btn.title = msg('nsfwblur-toggle-tip');
-        document.body.appendChild(btn);
     }
+
 
     function updateBlurs() {
         document.querySelectorAll('img.nsfw-blur').forEach(function(img) {
@@ -42,14 +55,14 @@
         var images = document.querySelectorAll('img');
         images.forEach(function(img) {
             if (img.classList.contains('nsfw-blur')) return;
-
             var src = img.src;
             if (!src) return;
             var match = src.match(/\/([A-Za-z0-9_\-%]+\.(?:jpg|jpeg|png|gif|svg))/i);
             if (!match) return;
             var fileName = decodeURIComponent(match[1]);
-
-            var apiUrl = mw.util.wikiScript('api') + '?action=query&format=json&prop=revisions&rvprop=content&titles=File:' + encodeURIComponent(fileName);
+            var apiUrl = mw.util.wikiScript('api') +
+                '?action=query&format=json&prop=revisions&rvprop=content&titles=File:' +
+                encodeURIComponent(fileName);
 
             fetch(apiUrl)
                 .then(function(response) { return response.json(); })
@@ -77,18 +90,11 @@
                 });
         });
     }
-    if (dob) {
-        var birth = new Date(dob);
-        var now = new Date();
-        var age = now.getFullYear() - birth.getFullYear();
-        var m = now.getMonth() - birth.getMonth();
-        if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) { age--; }
-        isOldEnough = age >= 18; // change age if you want
-    }
-    if (!isOldEnough) blurEnabled = true;
+
     $(function() {
         addToggleButton();
         scanAndBlur();
+        updateBlurs();
     });
 
     mw.hook('wikipage.content').add(function() {

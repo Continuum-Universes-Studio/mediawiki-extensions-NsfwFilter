@@ -5,5 +5,6 @@
     "nsfwblur-toggle-off": "NSFW Blur: OFF (see Preferences)",
     "nsfwblur-toggle-tip": "To change this, go to Preferences → Appearance → Files",
     "nsfwblur-pref-dob": "Date of birth (required for NSFW content)",
-    "tog-displayfiltered": "Display filtered images"
+    "tog-nsfwblurred": "Display filtered images",
+    "nsfwblur-pref-nsfw-age": "You must be at least 18 years old (based on your profile) to change this setting."
 }

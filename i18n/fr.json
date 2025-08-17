@@ -5,5 +5,5 @@
     "nsfwblur-toggle-off": "Flou NSFW : DÉSACTIVÉ (voir Préférences)",
     "nsfwblur-toggle-tip": "Pour modifier, allez dans Préférences → Apparence → Fichiers",
     "nsfwblur-pref-dob": "Date de naissance (nécessaire pour le contenu NSFW)",
-    "tog-displayfiltered": "Afficher les images filtrées"
+    "tog-nsfwblurred": "Afficher les images filtrées"
 }

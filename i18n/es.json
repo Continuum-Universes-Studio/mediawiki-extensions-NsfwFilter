@@ -5,5 +5,5 @@
     "nsfwblur-toggle-off": "Difuminar NSFW: DESACTIVADO (ver Preferencias)",
     "nsfwblur-toggle-tip": "Para cambiar esto, ve a Preferencias → Apariencia → Archivos",
     "nsfwblur-pref-dob": "Fecha de nacimiento (requerida para contenido NSFW)",
-    "tog-displayfiltered": "Mostrar imágenes filtradas"
+    "tog-nsfwblurred": "Mostrar imágenes filtradas"
 }
