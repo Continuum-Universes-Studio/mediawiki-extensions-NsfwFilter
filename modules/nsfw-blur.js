@@ -1,144 +1,77 @@
+/* modules/nsfw-blur.js */
+/* Keep your “existing” non-top logic here. This file intentionally avoids touching MMV classes
+ * so it doesn’t compete with nsfw-blur.top.js.
+ */
 (function () {
   'use strict';
 
+  // ---- basic gating (same helper so behavior is consistent) ----
   function isTruthy(v) {
     return v === true || v === 1 || v === '1' || v === 'true';
   }
 
-  // If user opted to unblur everywhere, do nothing.
-  if (isTruthy(mw.config.get('wgNSFWUnblur'))) return;
+  var userWantsUnblur = isTruthy(mw.config.get('wgNSFWUnblur'));
+  var nsfwList = mw.config.get('wgNSFWFilesOnPage') || [];
+  var nsfwSet = new Set(nsfwList.map(String));
 
-  var BODY_PREBLUR = 'nsfw-mmv-preblur';
-  var WRAP_BLUR = 'nsfw-mmv-blur';
+  // Example: blur/unblur on-page images already tagged by PHP (img.nsfw-blur OR wrapper.nsfw-blur)
+  function applyOnPageBlurState(root) {
+    var scope = root || document;
 
-  function getNSFWSet() {
-    var list = mw.config.get('wgNSFWFilesOnPage') || [];
-    return new Set(list.map(String));
-  }
-
-  var nsfwSet = getNSFWSet();
-
-  function normalizeTitleText(t) {
-    if (!t) return null;
-    try {
-      var titleObj = mw.Title.newFromText(String(t));
-      return titleObj ? titleObj.getPrefixedText() : null;
-    } catch (e) {
-      return null;
+    // If user wants unblur, remove blur effects via body class or direct styles.
+    // Prefer CSS body class in your stylesheet; this is a safety net.
+    if (userWantsUnblur) {
+      scope.querySelectorAll('img.nsfw-blur, .nsfw-blur img, .nsfw-blur .mw-file-element').forEach(function (el) {
+        el.style.filter = 'none';
+      });
+      return;
     }
-  }
 
-  function titleFromHref(href) {
-    if (!href) return null;
-    try {
-      var uri = new mw.Uri(href);
-      if (uri.query && uri.query.title) return normalizeTitleText(uri.query.title);
-
-      var m = uri.path && uri.path.match(/\/wiki\/(.+)$/);
-      if (m && m[1]) return normalizeTitleText(decodeURIComponent(m[1]));
-    } catch (e) {}
-    return null;
-  }
-
-  function getWrapper() {
-    return document.querySelector('.mw-mmv-wrapper');
-  }
-
-  function currentMediaViewerFileTitle(wrapper) {
-    if (!wrapper) return null;
-
-    // Prefer the “More details / file page” button if present; keep fallbacks.
-    var link = wrapper.querySelector(
-      'a.mw-mmv-description-page-button, a.mw-mmv-repo, a.mw-mmv-filepage, a[href*="File:"]'
-    );
-
-    return link && link.href ? titleFromHref(link.href) : null;
-  }
-
-  function setPreblur(on) {
-    document.body.classList.toggle(BODY_PREBLUR, !!on);
-  }
-
-  function setWrapperBlur(wrapper, on) {
-    if (!wrapper) return;
-    wrapper.classList.toggle(WRAP_BLUR, !!on);
-  }
-
-  // --- Throttled updates (prevents mutation storms + flicker) ---
-  var scheduled = false;
-  function scheduleUpdate() {
-    if (scheduled) return;
-    scheduled = true;
-    requestAnimationFrame(function () {
-      scheduled = false;
-      update();
+    // Otherwise ensure blur is applied (safety net; CSS should do most of this)
+    scope.querySelectorAll('img.nsfw-blur, .nsfw-blur img, .nsfw-blur .mw-file-element').forEach(function (el) {
+      el.style.filter = '';
     });
   }
 
-  // --- Bouncer mode update ---
-  function update() {
-    var wrapper = getWrapper();
+  // Optional: if you want to mark additional links/images from the config list
+  // (useful if class application is inconsistent across skins)
+  function markAnchorsByConfig(root) {
+    if (userWantsUnblur) return;
 
-    if (!wrapper) {
-      // MMV closed: clear preblur so it doesn't stick on the normal page.
-      setPreblur(false);
-      return;
-    }
+    var scope = root || document;
+    scope.querySelectorAll('a[href]').forEach(function (a) {
+      // Light-touch: only mark if it’s a File: link and in our list
+      if (!a.href || a.classList.contains('nsfw-blur')) return;
 
-    // Default to blurred while MMV is open.
-    setPreblur(true);
+      // Use mw.Uri to extract title param if present
+      var t = null;
+      try {
+        var uri = new mw.Uri(a.href);
+        if (uri.query && uri.query.title) {
+          var titleObj = mw.Title.newFromText(String(uri.query.title));
+          t = titleObj ? titleObj.getPrefixedText() : null;
+        }
+      } catch (e) {}
 
-    var title = currentMediaViewerFileTitle(wrapper);
-
-    // If MMV is mid-rerender and the title link isn't available yet,
-    // DO NOT unblur. Keep blur until we know it's safe.
-    if (!title) {
-      setWrapperBlur(wrapper, true);
-      return;
-    }
-
-    var isNSFW = nsfwSet.has(title);
-
-    // If NSFW: blur. If safe: unblur (remove both wrapper blur and preblur).
-    if (isNSFW) {
-      setWrapperBlur(wrapper, true);
-      setPreblur(true);
-    } else {
-      setWrapperBlur(wrapper, false);
-      setPreblur(false);
-    }
+      if (t && nsfwSet.has(t)) {
+        a.classList.add('nsfw-blur');
+        var img = a.querySelector('img');
+        if (img) img.classList.add('nsfw-blur');
+      }
+    });
   }
 
-  // --- PRE-BLUR: capture click BEFORE MediaViewer opens ---
-  document.addEventListener(
-    'click',
-    function (ev) {
-      var a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
-      if (!a) return;
+  function init(root) {
+    applyOnPageBlurState(root);
+    markAnchorsByConfig(root);
+  }
 
-      var t = titleFromHref(a.href);
-      if (t && nsfwSet.has(t)) {
-        // Blur immediately before MMV even draws.
-        setPreblur(true);
-      }
-    },
-    true
-  );
-
-  // Observe MMV DOM churn + navigation changes
-  new MutationObserver(scheduleUpdate).observe(document.documentElement, {
-    childList: true,
-    subtree: true
+  $(function () {
+    init(document);
   });
 
-  window.addEventListener('hashchange', scheduleUpdate);
-
-  mw.hook('wikipage.content').add(function () {
-    // If config changes due to partial renders, refresh set.
-    nsfwSet = getNSFWSet();
-    scheduleUpdate();
+  mw.hook('wikipage.content').add(function ($content) {
+    var node = ($content && $content[0]) ? $content[0] : document;
+    init(node);
   });
-
-  // Initial pass
-  scheduleUpdate();
 })();

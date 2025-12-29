@@ -8,6 +8,8 @@ if ( !defined( 'MEDIAWIKI' ) ) {
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Revision\SlotRecord;
 use MediaWiki\Revision\RevisionRecord;
+use MediaWiki\Parser\ParserOutput;
+use MediaWiki\Parser\ParserOutputLinkTypes;
 use OutputPage;
 use Skin;
 use RequestContext;
@@ -28,69 +30,114 @@ class Hooks {
         $services = MediaWikiServices::getInstance();
         $user = $out->getUser();
 
-        $userOptionsLookup = $services->getUserOptionsLookup();
-        $userWantsUnblur = $user->isRegistered()
-            ? (bool)$userOptionsLookup->getOption( $user, self::OPT_UNBLUR )
-            : false;
+        // --- prefs / gating ---
+        $userWantsUnblur = false;
+        $birthYear = null;
 
-        // Birth year is private; send only to logged-in users (null otherwise)
-        $birthYear = $user->isRegistered()
-            ? self::getUserPrivateBirthYear( $services, $user )
-            : null;
+        if ( $user->isRegistered() ) {
+            $opts = $services->getUserOptionsLookup();
+            $userWantsUnblur = (bool)$opts->getOption( $user, self::OPT_UNBLUR );
+            $birthYear = self::getUserPrivateBirthYear( $services, $user );
+        }
 
-        // JS config for gating / UI
+        // --- JS config (always predictable types) ---
         $out->addJsConfigVars( [
-            'wgPrivateBirthYear' => $birthYear,
-            'wgNSFWUnblur'       => $userWantsUnblur,
+            'wgPrivateBirthYear' => $birthYear,        // int|null
+            'wgNSFWUnblur'       => $userWantsUnblur,  // bool
+            'wgNSFWFilesOnPage'  => [],                // array; real list should be set in OutputPageParserOutput
         ] );
 
-        // Early “airbag” CSS to prevent flash of unblurred content
-        self::addEarlyInlineCss( $out );
-        $out->addInlineStyle(<<<'CSS'
-        /* PREVENT FLASH:
-        * In MW's non-legacy media DOM, the <img> often stays .mw-file-element and your class
-        * is applied to the wrapper <span>/<figure>. So we must target BOTH.
-        */
-        .nsfw-blur img,
-        .nsfw-blur .mw-file-element,
-        img.nsfw-blur {
-            filter: blur(24px) !important;
-        }
+        // --- Early “airbag” CSS to prevent flash ---
+        $out->addInlineStyle( self::getEarlyInlineCss() );
 
-        /* File: pages (body class applied by PHP) */
-        body.nsfw-filepage-blur #file img,
-        body.nsfw-filepage-blur #file .mw-file-element,
-        body.nsfw-filepage-blur .fullImageLink img,
-        body.nsfw-filepage-blur .mw-filepage-other-resolutions img {
-            filter: blur(24px) !important;
-        }
+        // --- ResourceLoader assets ---
+        $out->addModules( [ 'ext.nsfwblur.top', 'ext.nsfwblur' ] );
+        $out->addModuleStyles( [ 'ext.nsfwblur.styles' ] );
 
-        /* MediaViewer "preblur" (JS toggles this on very early) */
-        body.nsfw-mmv-preblur .mw-mmv-image img {
-            filter: blur(24px) !important;
-        }
-
-        /* Optional: kill transition during initial paint so it doesn't "animate in" like a flash */
-        .nsfw-blur img { transition: none !important; }
-        CSS);
-
-        // Modules / styles
-        // Keep your module names, but don’t load the same key twice
-        $out->addModules( [
-            'ext.nsfwblur.top', // position=top module in extension.json
-            'ext.nsfwblur',     // your main logic/UI module (if you still need it)
-        ] );
-
-        $out->addModuleStyles( [
-            'ext.nsfwblur.styles', // your normal stylesheet module
-        ] );
-
-        // File: page blur class if needed
+        // --- File: page blur class if needed ---
         self::applyFilePageBlurClass( $out, $services, $userWantsUnblur );
 
         return true;
     }
 
+    /** Keep inline CSS in one place so you don’t duplicate/indent it differently everywhere. */
+    private static function getEarlyInlineCss(): string {
+        return <<<'CSS'
+    /* PREVENT FLASH:
+    * In MW's non-legacy media DOM, the <img> often stays .mw-file-element and your class
+    * is applied to the wrapper <span>/<figure>. So we must target BOTH.
+    */
+    .nsfw-blur img,
+    .nsfw-blur .mw-file-element,
+    img.nsfw-blur {
+        filter: blur(24px) !important;
+    }
+
+    /* File: pages (body class applied by PHP) */
+    body.nsfw-filepage-blur #file img,
+    body.nsfw-filepage-blur #file .mw-file-element,
+    body.nsfw-filepage-blur .fullImageLink img,
+    body.nsfw-filepage-blur .mw-filepage-other-resolutions img {
+        filter: blur(24px) !important;
+    }
+
+    /* MediaViewer "preblur" (JS toggles this on very early) */
+    body.nsfw-mmv-preblur .mw-mmv-image img,
+    body.nsfw-mmv-preblur img.mw-mmv-final-image {
+        filter: blur(24px) !important;
+    }
+
+    /* Optional: kill transition during initial paint so it doesn't "animate in" like a flash */
+    .nsfw-blur img { transition: none !important; }
+    CSS;
+    }
+
+
+public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $parserOutput ): void {
+    $services = MediaWikiServices::getInstance();
+    $user = $out->getUser();
+
+    // If user opted to unblur, don't bother building the list.
+    $userWantsUnblur = false;
+    if ( $user->isRegistered() ) {
+        $opts = $services->getUserOptionsLookup();
+        $userWantsUnblur = (bool)$opts->getOption( $user, self::OPT_UNBLUR );
+    }
+    if ( $userWantsUnblur ) {
+        $parserOutput->addJsConfigVars( 'wgNSFWFilesOnPage', [] );
+        return;
+    }
+
+    // Get media links from ParserOutput (MEDIA = File: links used on the page)
+    $media = $parserOutput->getLinkList( ParserOutputLinkTypes::MEDIA ); // :contentReference[oaicite:2]{index=2}
+
+    if ( !$media ) {
+        $parserOutput->addJsConfigVars( 'wgNSFWFilesOnPage', [] );
+        return;
+    }
+
+    $nsfw = [];
+    foreach ( $media as $item ) {
+        $link = $item['link'] ?? null;
+        if ( !$link || !method_exists( $link, 'getDBkey' ) ) {
+            continue;
+        }
+
+        $fileTitle = \Title::makeTitleSafe( NS_FILE, $link->getDBkey() );
+        if ( !$fileTitle ) {
+            continue;
+        }
+
+        if ( self::isFileTitleMarkedNSFW( $services, $fileTitle ) ) {
+            $nsfw[] = $fileTitle->getPrefixedText(); // "File:Example.png"
+        }
+    }
+
+    $nsfw = array_values( array_unique( $nsfw ) );
+    sort( $nsfw );
+
+    $parserOutput->addJsConfigVars( 'wgNSFWFilesOnPage', $nsfw );
+}
     /** Registers the user preference */
     public static function onGetPreferences( $user, &$preferences ) {
         $canSeeNSFW = self::isUserOldEnoughForNSFW( $user, 18 );
@@ -227,4 +274,25 @@ class Hooks {
         // you may want to handle Content::serialize() instead.
         return method_exists( $content, 'getText' ) ? $content->getText() : null;
     }
+    private static function applyFilePageBlurClass(
+        OutputPage $out,
+        \MediaWiki\MediaWikiServices $services,
+        bool $userWantsUnblur
+    ): void {
+        $title = $out->getTitle();
+        if ( !$title || !$title->inNamespace( NS_FILE ) ) {
+            return;
+        }
+
+        if ( $userWantsUnblur ) {
+            return; // user opted out of blur
+        }
+
+        if ( self::isFileTitleMarkedNSFW( $services, $title ) ) {
+            $out->addBodyClasses( 'nsfw-filepage-blur' );
+            $out->addJsConfigVars( 'wgNSFWFilePage', true );
+        }
+    }
+
+
 }

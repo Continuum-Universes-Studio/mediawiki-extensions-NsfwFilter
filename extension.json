@@ -4,7 +4,7 @@
     "author": "OnikaGPT 4o, Christian Daniel Jensen, ChatGPT-5.2",
     "url": "https://www.mediawiki.org/wiki/Extension:NSFW_Filter",
     "descriptionmsg": "nsfwblur-desc",
-    "type": "other",
+    "type": "Hooks",
     "manifest_version": 2,
     "requires": {
         "MediaWiki": ">= 1.43.0"
@@ -13,19 +13,38 @@
         "NSFWBlur\\Hooks": "includes/Hooks.php"
     },
     "ResourceModules": {
-        "ext.nsfwblur": {
-            "dependencies": [ "user.options" ],
+        "ext.nsfwblur.top": {
             "localBasePath": ".",
-            "remoteExtPath": "NSFWFilter",
-            "styles": [
-                "modules/nsfw-blur.css"
+            "remoteExtPath": "NsfwFilter",
+            "position": "top",
+            "dependencies": [
+            "mediawiki.util",
+            "mediawiki.Uri",
+            "mediawiki.Title"
             ],
             "scripts": [
-                "modules/nsfw-blur.js"
+            "modules/nsfw-blur.top.js"
             ],
             "targets": [
-                "desktop",
-                "mobile"
+            "desktop",
+            "mobile"
+            ]
+        },
+        "ext.nsfwblur": {
+            "localBasePath": ".",
+            "remoteExtPath": "NsfwFilter",
+            "dependencies": [
+            "user.options"
+            ],
+            "styles": [
+            "modules/nsfw-blur.css"
+            ],
+            "scripts": [
+            "modules/nsfw-blur.js"
+            ],
+            "targets": [
+            "desktop",
+            "mobile"
             ]
         }
     },
@@ -40,6 +59,9 @@
     "Hooks": {
         "BeforePageDisplay": [
             "NSFWBlur\\Hooks::onBeforePageDisplay"
+        ],
+        "OutputPageParserOutput": [
+            "NSFWBlur\\Hooks::onOutputPageParserOutput"
         ],
         "ImageBeforeProduceHTML": [
             "NSFWBlur\\Hooks::onImageBeforeProduceHTML"
