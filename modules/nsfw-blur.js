@@ -1,104 +1,144 @@
-(function() {
-    var userLoggedIn = mw.config.get('wgUserName') !== null;
-    
-    var blurPref = mw.user.options.get('nsfwblurred');
-    var blurEnabled = blurPref === null ? true : !blurPref;
+(function () {
+  'use strict';
 
-    var birthYear = mw.config.get('wgPrivateBirthYear');
-    var isOldEnough = false;
-    var now = new Date();
-    var thisYear = now.getFullYear();
+  function isTruthy(v) {
+    return v === true || v === 1 || v === '1' || v === 'true';
+  }
 
-    if (birthYear && /^\d{4}$/.test(birthYear)) {
-        var age = thisYear - parseInt(birthYear, 10);
-        isOldEnough = age >= 18;
+  // If user opted to unblur everywhere, do nothing.
+  if (isTruthy(mw.config.get('wgNSFWUnblur'))) return;
+
+  var BODY_PREBLUR = 'nsfw-mmv-preblur';
+  var WRAP_BLUR = 'nsfw-mmv-blur';
+
+  function getNSFWSet() {
+    var list = mw.config.get('wgNSFWFilesOnPage') || [];
+    return new Set(list.map(String));
+  }
+
+  var nsfwSet = getNSFWSet();
+
+  function normalizeTitleText(t) {
+    if (!t) return null;
+    try {
+      var titleObj = mw.Title.newFromText(String(t));
+      return titleObj ? titleObj.getPrefixedText() : null;
+    } catch (e) {
+      return null;
     }
-    if (!userLoggedIn || !isOldEnough || isOldEnough && blurPref === 1) {
-        blurEnabled = true;
-    }
+  }
 
-    function msg(name) {
-        return mw.message(name).plain();
-    }
+  function titleFromHref(href) {
+    if (!href) return null;
+    try {
+      var uri = new mw.Uri(href);
+      if (uri.query && uri.query.title) return normalizeTitleText(uri.query.title);
 
-    // (Optional) Add a button for toggling filter (for adults only)
-    function addToggleButton() {
-        if (!userLoggedIn || !isOldEnough) return; // Only allow 18+ to toggle
+      var m = uri.path && uri.path.match(/\/wiki\/(.+)$/);
+      if (m && m[1]) return normalizeTitleText(decodeURIComponent(m[1]));
+    } catch (e) {}
+    return null;
+  }
 
-        var btn = document.createElement('button');
-        btn.id = 'nsfw-blur-toggle-btn';
-        btn.style.position = 'fixed';
-        btn.style.bottom = '22px';
-        btn.style.right = '22px';
-        btn.style.zIndex = 9999;
-        btn.style.padding = '7px 16px';
-        btn.style.fontSize = '1em';
-        btn.style.background = '#7a1787';
-        btn.style.color = 'white';
-        btn.style.border = 'none';
-        btn.style.borderRadius = '6px';
-        btn.style.boxShadow = '0 2px 7px rgba(0,0,0,0.15)';
-        btn.style.opacity = '0.88';
-        btn.style.cursor = 'pointer';
-        btn.textContent = blurEnabled ? msg('nsfwblur-toggle-on') : msg('nsfwblur-toggle-off');
-        btn.title = msg('nsfwblur-toggle-tip');
-    }
+  function getWrapper() {
+    return document.querySelector('.mw-mmv-wrapper');
+  }
 
+  function currentMediaViewerFileTitle(wrapper) {
+    if (!wrapper) return null;
 
-    function updateBlurs() {
-        document.querySelectorAll('img.nsfw-blur').forEach(function(img) {
-            img.style.filter = blurEnabled ? '' : 'none';
-        });
-    }
+    // Prefer the “More details / file page” button if present; keep fallbacks.
+    var link = wrapper.querySelector(
+      'a.mw-mmv-description-page-button, a.mw-mmv-repo, a.mw-mmv-filepage, a[href*="File:"]'
+    );
 
-    function scanAndBlur() {
-        var images = document.querySelectorAll('img');
-        images.forEach(function(img) {
-            if (img.classList.contains('nsfw-blur')) return;
-            var src = img.src;
-            if (!src) return;
-            var match = src.match(/\/([A-Za-z0-9_\-%]+\.(?:jpg|jpeg|png|gif|svg))/i);
-            if (!match) return;
-            var fileName = decodeURIComponent(match[1]);
-            var apiUrl = mw.util.wikiScript('api') +
-                '?action=query&format=json&prop=revisions&rvprop=content&titles=File:' +
-                encodeURIComponent(fileName);
+    return link && link.href ? titleFromHref(link.href) : null;
+  }
 
-            fetch(apiUrl)
-                .then(function(response) { return response.json(); })
-                .then(function(data) {
-                    var pages = data.query.pages;
-                    for (var pageId in pages) {
-                        if (!pages.hasOwnProperty(pageId)) continue;
-                        var page = pages[pageId];
-                        var content = (
-                            page.revisions && page.revisions[0] &&
-                            (page.revisions[0]['*'] ||
-                             (page.revisions[0]['slots'] &&
-                                (page.revisions[0]['slots'].main['*'] ||
-                                 page.revisions[0]['slots'].main['content'])
-                             )
-                            )
-                        );
-                        if (content && content.includes('__NSFW__')) {
-                            img.classList.add('nsfw-blur');
-                            if (!blurEnabled) {
-                                img.style.filter = 'none';
-                            }
-                        }
-                    }
-                });
-        });
-    }
+  function setPreblur(on) {
+    document.body.classList.toggle(BODY_PREBLUR, !!on);
+  }
 
-    $(function() {
-        addToggleButton();
-        scanAndBlur();
-        updateBlurs();
+  function setWrapperBlur(wrapper, on) {
+    if (!wrapper) return;
+    wrapper.classList.toggle(WRAP_BLUR, !!on);
+  }
+
+  // --- Throttled updates (prevents mutation storms + flicker) ---
+  var scheduled = false;
+  function scheduleUpdate() {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(function () {
+      scheduled = false;
+      update();
     });
+  }
 
-    mw.hook('wikipage.content').add(function() {
-        scanAndBlur();
-        updateBlurs();
-    });
+  // --- Bouncer mode update ---
+  function update() {
+    var wrapper = getWrapper();
+
+    if (!wrapper) {
+      // MMV closed: clear preblur so it doesn't stick on the normal page.
+      setPreblur(false);
+      return;
+    }
+
+    // Default to blurred while MMV is open.
+    setPreblur(true);
+
+    var title = currentMediaViewerFileTitle(wrapper);
+
+    // If MMV is mid-rerender and the title link isn't available yet,
+    // DO NOT unblur. Keep blur until we know it's safe.
+    if (!title) {
+      setWrapperBlur(wrapper, true);
+      return;
+    }
+
+    var isNSFW = nsfwSet.has(title);
+
+    // If NSFW: blur. If safe: unblur (remove both wrapper blur and preblur).
+    if (isNSFW) {
+      setWrapperBlur(wrapper, true);
+      setPreblur(true);
+    } else {
+      setWrapperBlur(wrapper, false);
+      setPreblur(false);
+    }
+  }
+
+  // --- PRE-BLUR: capture click BEFORE MediaViewer opens ---
+  document.addEventListener(
+    'click',
+    function (ev) {
+      var a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
+      if (!a) return;
+
+      var t = titleFromHref(a.href);
+      if (t && nsfwSet.has(t)) {
+        // Blur immediately before MMV even draws.
+        setPreblur(true);
+      }
+    },
+    true
+  );
+
+  // Observe MMV DOM churn + navigation changes
+  new MutationObserver(scheduleUpdate).observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
+
+  window.addEventListener('hashchange', scheduleUpdate);
+
+  mw.hook('wikipage.content').add(function () {
+    // If config changes due to partial renders, refresh set.
+    nsfwSet = getNSFWSet();
+    scheduleUpdate();
+  });
+
+  // Initial pass
+  scheduleUpdate();
 })();

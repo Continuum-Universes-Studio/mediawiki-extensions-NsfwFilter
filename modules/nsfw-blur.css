@@ -1,5 +1,28 @@
-.nsfw-blur {
-    filter: blur(20px);
-    position: relative;
-    cursor: pointer;
+/* NSFW thumbnails / inline images: class is on the IMG */
+img.nsfw-blur {
+  filter: blur(24px);
+  transition: filter 160ms linear;
+}
+
+/* Your existing body toggle can override */
+body.nsfw-unblur img.nsfw-blur {
+  filter: none;
+}
+
+/* MediaViewer: blur the displayed image when wrapper is flagged */
+.mw-mmv-wrapper.nsfw-mmv-blur .mw-mmv-image img {
+  filter: blur(24px);
+}
+
+/* Optional: respect your unblur mode globally */
+body.nsfw-unblur .mw-mmv-wrapper.nsfw-mmv-blur .mw-mmv-image img {
+  filter: none;
+}
+/* When wrapper is flagged, blur MMV image */
+.mw-mmv-wrapper.nsfw-mmv-blur .mw-mmv-image img {
+  filter: blur(24px);
+}
+.nsfw-blur img {
+  transition: none !important;
+  filter: blur(24px);
 }
