@@ -140,7 +140,8 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
 }
     /** Registers the user preference */
     public static function onGetPreferences( $user, &$preferences ) {
-        $canSeeNSFW = self::isUserOldEnoughForNSFW( $user, 18 );
+        $services = MediaWikiServices::getInstance();
+        $canSeeNSFW = self::isUserOldEnoughForNSFW( $services, $user, 18 );
         if ( !$canSeeNSFW ) {
             self::resetNSFWBlurredOptionForUser( $user );
         }
@@ -248,6 +249,15 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
         $mgr = $services->getUserOptionsManager();
 
         $mgr->setOption( $user, self::OPT_BIRTHYR, '' );
+        $mgr->setOption( $user, self::OPT_UNBLUR, false );
+        $mgr->saveOptions( $user );
+    }
+
+    /** Helper: reset the unblur toggle only */
+    private static function resetNSFWBlurredOptionForUser( UserIdentity $user ): void {
+        $services = MediaWikiServices::getInstance();
+        $mgr = $services->getUserOptionsManager();
+
         $mgr->setOption( $user, self::OPT_UNBLUR, false );
         $mgr->saveOptions( $user );
     }
