@@ -1,5 +1,5 @@
 {
-    "name": "NSFWBlur",
+    "name": "NSFW Filter",
     "version": "2.0.0",
     "author": "OnikaGPT 4o, Christian Daniel Jensen, ChatGPT-5.2",
     "url": "https://www.mediawiki.org/wiki/Extension:NSFW_Filter",
@@ -23,7 +23,7 @@
             "mediawiki.Title"
             ],
             "scripts": [
-            "modules/nsfw-blur.top.js"
+                "modules/nsfw-blur.top.js"
             ],
             "targets": [
             "desktop",
@@ -37,10 +37,10 @@
             "user.options"
             ],
             "styles": [
-            "modules/nsfw-blur.css"
+                "modules/nsfw-blur.css"
             ],
             "scripts": [
-            "modules/nsfw-blur.js"
+                "modules/nsfw-blur.js"
             ],
             "targets": [
             "desktop",
