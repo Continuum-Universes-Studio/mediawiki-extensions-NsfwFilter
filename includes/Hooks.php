@@ -140,10 +140,19 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
 }
     /** Registers the user preference */
     public static function onGetPreferences( $user, &$preferences ) {
-        $canSeeNSFW = self::isUserOldEnoughForNSFW( $user, 18 );
+        $services = MediaWikiServices::getInstance();
+        $canSeeNSFW = self::isUserOldEnoughForNSFW( $services, $user, 18 );
         if ( !$canSeeNSFW ) {
             self::resetNSFWBlurredOptionForUser( $user );
         }
+        $preferences[self::OPT_BIRTHYR] = [
+            'type' => 'int',
+            'label-message' => 'nsfwblur-birthyear-label',
+            'help-message' => 'nsfwblur-birthyear-help',
+            'section' => 'personal/info',
+            'default' => '',
+            'validation-callback' => [ self::class, 'validateBirthYearPreference' ],
+        ];
         $preferences['nsfwblurred'] = [
             'type' => 'toggle',
             'label-message' => 'tog-nsfwblurred',
@@ -242,12 +251,40 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
         return ( $thisYear - $birthYear ) >= $minAge;
     }
 
+    /** Validate birth year preference input */
+    public static function validateBirthYearPreference( $value, $alldata = null, $user = null ): bool|string {
+        if ( $value === '' || $value === null ) {
+            return true;
+        }
+
+        $year = (int)$value;
+        if ( $year <= 0 ) {
+            return wfMessage( 'nsfwblur-birthyear-invalid' )->text();
+        }
+
+        $thisYear = (int)date( 'Y' );
+        if ( $year < 1900 || $year > $thisYear ) {
+            return wfMessage( 'nsfwblur-birthyear-invalid' )->text();
+        }
+
+        return true;
+    }
+
     /** Optional helper: reset both options for a user */
     public static function resetNSFWOptionsForUser( UserIdentity $user ): void {
         $services = MediaWikiServices::getInstance();
         $mgr = $services->getUserOptionsManager();
 
         $mgr->setOption( $user, self::OPT_BIRTHYR, '' );
+        $mgr->setOption( $user, self::OPT_UNBLUR, false );
+        $mgr->saveOptions( $user );
+    }
+
+    /** Helper: reset the unblur toggle only */
+    private static function resetNSFWBlurredOptionForUser( UserIdentity $user ): void {
+        $services = MediaWikiServices::getInstance();
+        $mgr = $services->getUserOptionsManager();
+
         $mgr->setOption( $user, self::OPT_UNBLUR, false );
         $mgr->saveOptions( $user );
     }
