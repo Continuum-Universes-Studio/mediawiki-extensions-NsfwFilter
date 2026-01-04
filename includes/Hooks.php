@@ -145,6 +145,14 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
         if ( !$canSeeNSFW ) {
             self::resetNSFWBlurredOptionForUser( $user );
         }
+        $preferences[self::OPT_BIRTHYR] = [
+            'type' => 'int',
+            'label-message' => 'nsfwblur-birthyear-label',
+            'help-message' => 'nsfwblur-birthyear-help',
+            'section' => 'personal/info',
+            'default' => '',
+            'validation-callback' => [ self::class, 'validateBirthYearPreference' ],
+        ];
         $preferences['nsfwblurred'] = [
             'type' => 'toggle',
             'label-message' => 'tog-nsfwblurred',
@@ -241,6 +249,25 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
         }
         $thisYear = (int)date( 'Y' );
         return ( $thisYear - $birthYear ) >= $minAge;
+    }
+
+    /** Validate birth year preference input */
+    public static function validateBirthYearPreference( $value, $alldata = null, $user = null ): bool|string {
+        if ( $value === '' || $value === null ) {
+            return true;
+        }
+
+        $year = (int)$value;
+        if ( $year <= 0 ) {
+            return wfMessage( 'nsfwblur-birthyear-invalid' )->text();
+        }
+
+        $thisYear = (int)date( 'Y' );
+        if ( $year < 1900 || $year > $thisYear ) {
+            return wfMessage( 'nsfwblur-birthyear-invalid' )->text();
+        }
+
+        return true;
     }
 
     /** Optional helper: reset both options for a user */
