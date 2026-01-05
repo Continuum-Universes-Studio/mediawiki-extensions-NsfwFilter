@@ -33,17 +33,17 @@ class Hooks {
 
         // --- prefs / gating ---
         $userWantsUnblur = false;
-        $birthDate = null;
+        $birthYear = null;
 
         if ( $user->isRegistered() ) {
             $opts = $services->getUserOptionsLookup();
             $userWantsUnblur = (bool)$opts->getOption( $user, self::OPT_UNBLUR );
-            $birthDate = self::getUserPrivateBirthDate( $services, $user );
+            $birthYear = self::getUserPrivateBirthYear( $services, $user );
         }
 
         // --- JS config (always predictable types) ---
         $out->addJsConfigVars( [
-            'wgPrivateBirthDate' => $birthDate,       // string|null
+            'wgPrivateBirthYear' => $birthYear,        // int|null
             'wgNSFWUnblur'       => $userWantsUnblur,  // bool
             'wgNSFWFilesOnPage'  => [],                // array; real list should be set in OutputPageParserOutput
         ] );
@@ -141,7 +141,7 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
 }
     /** Registers the user preference */
     public static function onGetPreferences( $user, &$preferences ) {
-        $services = MediaWikiServices::getInstance();
+         $services = MediaWikiServices::getInstance();
         $canSeeNSFW = self::isUserOldEnoughForNSFW( $services, $user, 18 );
         $storedBirthDate = self::getUserBirthDateDefault( $services, $user );
         $preferences[self::OPT_BIRTHDATE] = [
@@ -226,29 +226,25 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
         return (bool)$services->getUserOptionsLookup()->getOption( $user, self::OPT_UNBLUR );
     }
 
+    /** Helper: Get user birth year from user options (private "custom profile field") */
+    private static function getUserPrivateBirthYear( MediaWikiServices $services, User $user ): ?int {
+        $val = $services->getUserOptionsLookup()->getOption( $user, self::OPT_BIRTHDATE, '' );
+
+        if ( $val === '' || $val === null ) {
+            return null;
+        }
+
+        $year = (int)$val;
+        return $year > 0 ? $year : null;
+    }
     /** Helper: get default birth date for preference display */
     private static function getUserBirthDateDefault( MediaWikiServices $services, User $user ): string {
         $val = self::getUserBirthDateOption( $services, $user );
         if ( $val === '' || $val === null ) {
             return '';
         }
-
-        $normalized = self::normalizeBirthDateValue( $val );
-        return $normalized ?? '';
+    
     }
-
-    /** Helper: Get user birth date from user options (private "custom profile field") */
-    private static function getUserPrivateBirthDate( MediaWikiServices $services, User $user ): ?string {
-        $val = self::getUserBirthDateOption( $services, $user );
-        if ( $val === '' || $val === null ) {
-            return null;
-        }
-
-        $normalized = self::normalizeBirthDateValue( $val );
-        return $normalized ?: null;
-    }
-
-    /** Helper: resolve birth date from current or legacy option key */
     private static function getUserBirthDateOption( MediaWikiServices $services, User $user ): ?string {
         $lookup = $services->getUserOptionsLookup();
         $val = $lookup->getOption( $user, self::OPT_BIRTHDATE, '' );
@@ -258,8 +254,19 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
 
         return $lookup->getOption( $user, self::OPT_BIRTHDATE_LEGACY, '' );
     }
-
-    /** Normalize stored birth date values (accepts YYYY-MM-DD, YYYY, or YYYY-MM-DD HH:MM:SS) */
+    /** Helper: Age check */
+    private static function isUserOldEnoughForNSFW(
+        MediaWikiServices $services,
+        User $user,
+        int $minAge = self::MIN_AGE
+    ): bool {
+        $birthYear = self::getUserPrivateBirthYear( $services, $user );
+        if ( !$birthYear ) {
+            return false;
+        }
+        $thisYear = (int)date( 'Y' );
+        return ( $thisYear - $birthYear ) >= $minAge;
+    }
     private static function normalizeBirthDateValue( $value ): ?string {
         $value = trim( (string)$value );
         if ( $value === '' ) {
@@ -280,96 +287,16 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
 
         return null;
     }
-
-    /** Parse a normalized YYYY-MM-DD date into a DateTimeImmutable */
-    private static function parseBirthDate( string $date ): ?\DateTimeImmutable {
-        $birthDate = \DateTimeImmutable::createFromFormat( 'Y-m-d', $date );
-        if ( !$birthDate ) {
+    /** Helper: Get user birth date from user options (private "custom profile field") */
+    private static function getUserPrivateBirthDate( MediaWikiServices $services, User $user ): ?string {
+        $val = self::getUserBirthDateOption( $services, $user );
+        if ( $val === '' || $val === null ) {
             return null;
         }
 
-        $errors = \DateTimeImmutable::getLastErrors();
-        if ( $errors['warning_count'] > 0 || $errors['error_count'] > 0 ) {
-            return null;
-        }
-
-        return $birthDate;
+        $normalized = self::normalizeBirthDateValue( $val );
+        return $normalized ?: null;
     }
-
-    /** Helper: Age check */
-    private static function isUserOldEnoughForNSFW(
-        MediaWikiServices $services,
-        User $user,
-        int $minAge = self::MIN_AGE
-    ): bool {
-        $birthDate = self::getUserPrivateBirthDate( $services, $user );
-        if ( !$birthDate ) {
-            return false;
-        }
-
-        $birthDateObj = self::parseBirthDate( $birthDate );
-        if ( !$birthDateObj ) {
-            return false;
-        }
-
-        $now = new \DateTimeImmutable( 'now' );
-        $age = $birthDateObj->diff( $now )->y;
-        return $age >= $minAge;
-    }
-
-    /** Validate birth date preference input */
-    public static function validateBirthDatePreference( $value, $alldata = null, $user = null ): bool|string {
-        if ( $value === '' || $value === null ) {
-            return true;
-        }
-
-        $normalized = self::normalizeBirthDateValue( $value );
-        if ( !$normalized || !self::parseBirthDate( $normalized ) ) {
-            return wfMessage( 'nsfwblur-birthdate-invalid' )->text();
-        }
-
-        return true;
-    }
-
-    /** Validate the unblur toggle so underage users cannot enable it */
-    public static function validateNsfwUnblurPreference( $value, $alldata = null, $user = null ): bool|string {
-        if ( !$value ) {
-            return true;
-        }
-
-        $services = MediaWikiServices::getInstance();
-        $birthDate = null;
-        if ( is_array( $alldata ) ) {
-            if ( array_key_exists( self::OPT_BIRTHDATE, $alldata ) ) {
-                $birthDate = $alldata[self::OPT_BIRTHDATE];
-            } elseif ( array_key_exists( self::OPT_BIRTHDATE_LEGACY, $alldata ) ) {
-                $birthDate = $alldata[self::OPT_BIRTHDATE_LEGACY];
-            }
-        }
-
-        if ( $birthDate !== null && $birthDate !== '' ) {
-            $normalized = self::normalizeBirthDateValue( $birthDate );
-            if ( $normalized ) {
-                $birthDateObj = self::parseBirthDate( $normalized );
-                if ( $birthDateObj ) {
-                    $age = $birthDateObj->diff( new \DateTimeImmutable( 'now' ) )->y;
-                    if ( $age >= self::MIN_AGE ) {
-                        return true;
-                    }
-                }
-            }
-        } elseif ( $user instanceof UserIdentity ) {
-            $userObj = $user instanceof User
-                ? $user
-                : $services->getUserFactory()->newFromUserIdentity( $user );
-            if ( self::isUserOldEnoughForNSFW( $services, $userObj, self::MIN_AGE ) ) {
-                return true;
-            }
-        }
-
-        return wfMessage( 'nsfwblur-pref-nsfw-age' )->text();
-    }
-
     /** Validate birth year preference input */
     public static function validateBirthYearPreference( $value, $alldata = null, $user = null ): bool|string {
         if ( $value === '' || $value === null ) {
@@ -388,12 +315,52 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
 
         return true;
     }
+
+    /** Validate the unblur toggle so underage users cannot enable it */
+    public static function validateNsfwUnblurPreference( $value, $alldata = null, $user = null ): bool|string {
+        if ( !$value ) {
+            return true;
+        }
+
+        $services = MediaWikiServices::getInstance();
+        $birthYear = null;
+        if ( is_array( $alldata ) && array_key_exists( self::OPT_BIRTHDATE, $alldata ) ) {
+            $birthYear = $alldata[self::OPT_BIRTHDATE];
+        }
+
+        if ( $birthYear !== null && $birthYear !== '' ) {
+            $year = (int)$birthYear;
+            $thisYear = (int)date( 'Y' );
+            if ( $year > 0 && $year <= $thisYear ) {
+                $age = $thisYear - $year;
+                if ( $age >= self::MIN_AGE ) {
+                    return true;
+                }
+            }
+        } elseif ( $user instanceof User ) {
+            if ( self::isUserOldEnoughForNSFW( $services, $user, self::MIN_AGE ) ) {
+                return true;
+            }
+        }
+
+        return wfMessage( 'nsfwblur-pref-nsfw-age' )->text();
+    }
+
     /** Optional helper: reset both options for a user */
     public static function resetNSFWOptionsForUser( UserIdentity $user ): void {
         $services = MediaWikiServices::getInstance();
         $mgr = $services->getUserOptionsManager();
 
         $mgr->setOption( $user, self::OPT_BIRTHDATE, '' );
+        $mgr->setOption( $user, self::OPT_UNBLUR, false );
+        $mgr->saveOptions( $user );
+    }
+
+    /** Helper: reset the unblur toggle only */
+    private static function resetNSFWBlurredOptionForUser( UserIdentity $user ): void {
+        $services = MediaWikiServices::getInstance();
+        $mgr = $services->getUserOptionsManager();
+
         $mgr->setOption( $user, self::OPT_UNBLUR, false );
         $mgr->saveOptions( $user );
     }
