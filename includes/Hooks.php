@@ -158,7 +158,7 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
             'type' => 'toggle',
             'label-message' => 'tog-nsfwblurred',
             'section' => 'rendering/files',
-            'default' => false,
+            'disabled' => !$canSeeNSFW,
             'help-message' => !$canSeeNSFW ? 'nsfwblur-pref-nsfw-age' : null,
             'validation-callback' => [ self::class, 'validateNsfwUnblurPreference' ],
         ];
