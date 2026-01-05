@@ -21,140 +21,139 @@ use User;
 class Hooks {
 
     private const NSFW_MARKER = '__NSFW__';
-    private const OPT_UNBLUR  = 'nsfwblurred';     // toggle: show NSFW unblurred
-    private const OPT_BIRTHDATE = 'nsfw_birthdate';  // private date field (YYYY-MM-DD)
-    private const OPT_BIRTHDATE_LEGACY = 'nsfw_birthyear';
-    private const MIN_AGE     = 18;
 
-    /** Adds JS config vars for age/gating + loads modules/styles early */
+    private const OPT_UNBLUR            = 'nsfwblurred';
+    private const OPT_BIRTHDATE         = 'nsfw_birthdate';
+    private const OPT_BIRTHDATE_LEGACY  = 'nsfw_birthyear';
+
+    private const MIN_AGE = 18;
+
+    /* ============================================================
+     *  PAGE DISPLAY
+     * ========================================================== */
+
     public static function onBeforePageDisplay( OutputPage $out, Skin $skin ): bool {
         $services = MediaWikiServices::getInstance();
         $user = $out->getUser();
 
-        // --- prefs / gating ---
         $userWantsUnblur = false;
         $birthYear = null;
 
         if ( $user->isRegistered() ) {
             $opts = $services->getUserOptionsLookup();
             $userWantsUnblur = (bool)$opts->getOption( $user, self::OPT_UNBLUR );
-            $birthYear = self::getUserPrivateBirthYear( $services, $user );
+            $birthYear = self::getUserBirthYear( $services, $user );
         }
 
-        // --- JS config (always predictable types) ---
         $out->addJsConfigVars( [
-            'wgPrivateBirthYear' => $birthYear,        // int|null
-            'wgNSFWUnblur'       => $userWantsUnblur,  // bool
-            'wgNSFWFilesOnPage'  => [],                // array; real list should be set in OutputPageParserOutput
+            'wgPrivateBirthYear' => $birthYear,
+            'wgNSFWUnblur'       => $userWantsUnblur,
+            'wgNSFWFilesOnPage'  => [],
         ] );
 
-        // --- Early “airbag” CSS to prevent flash ---
         $out->addInlineStyle( self::getEarlyInlineCss() );
-
-        // --- ResourceLoader assets ---
         $out->addModules( [ 'ext.nsfwblur.top', 'ext.nsfwblur' ] );
         $out->addModuleStyles( [ 'ext.nsfwblur.styles' ] );
 
-        // --- File: page blur class if needed ---
         self::applyFilePageBlurClass( $out, $services, $userWantsUnblur );
 
         return true;
     }
 
-    /** Keep inline CSS in one place so you don’t duplicate/indent it differently everywhere. */
     private static function getEarlyInlineCss(): string {
         return <<<'CSS'
-    /* PREVENT FLASH:
-    * In MW's non-legacy media DOM, the <img> often stays .mw-file-element and your class
-    * is applied to the wrapper <span>/<figure>. So we must target BOTH.
-    */
-    .nsfw-blur img,
-    .nsfw-blur .mw-file-element,
-    img.nsfw-blur {
-        filter: blur(24px) !important;
-    }
-
-    /* File: pages (body class applied by PHP) */
-    body.nsfw-filepage-blur #file img,
-    body.nsfw-filepage-blur #file .mw-file-element,
-    body.nsfw-filepage-blur .fullImageLink img,
-    body.nsfw-filepage-blur .mw-filepage-other-resolutions img {
-        filter: blur(24px) !important;
-    }
-
-    /* MediaViewer "preblur" (JS toggles this on very early) */
-    body.nsfw-mmv-preblur .mw-mmv-image img,
-    body.nsfw-mmv-preblur img.mw-mmv-final-image {
-        filter: blur(24px) !important;
-    }
-
-    /* Optional: kill transition during initial paint so it doesn't "animate in" like a flash */
-    .nsfw-blur img { transition: none !important; }
-    CSS;
-    }
-
-
-public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $parserOutput ): void {
-    $services = MediaWikiServices::getInstance();
-    $user = $out->getUser();
-
-    // If user opted to unblur, don't bother building the list.
-    $userWantsUnblur = false;
-    if ( $user->isRegistered() ) {
-        $opts = $services->getUserOptionsLookup();
-        $userWantsUnblur = (bool)$opts->getOption( $user, self::OPT_UNBLUR );
-    }
-    if ( $userWantsUnblur ) {
-        $parserOutput->addJsConfigVars( 'wgNSFWFilesOnPage', [] );
-        return;
-    }
-
-    // Get media links from ParserOutput (MEDIA = File: links used on the page)
-    $media = $parserOutput->getLinkList( ParserOutputLinkTypes::MEDIA ); // :contentReference[oaicite:2]{index=2}
-
-    if ( !$media ) {
-        $parserOutput->addJsConfigVars( 'wgNSFWFilesOnPage', [] );
-        return;
-    }
-
-    $nsfw = [];
-    foreach ( $media as $item ) {
-        $link = $item['link'] ?? null;
-        if ( !$link || !method_exists( $link, 'getDBkey' ) ) {
-            continue;
-        }
-
-        $fileTitle = \Title::makeTitleSafe( NS_FILE, $link->getDBkey() );
-        if ( !$fileTitle ) {
-            continue;
-        }
-
-        if ( self::isFileTitleMarkedNSFW( $services, $fileTitle ) ) {
-            $nsfw[] = $fileTitle->getPrefixedText(); // "File:Example.png"
-        }
-    }
-
-    $nsfw = array_values( array_unique( $nsfw ) );
-    sort( $nsfw );
-
-    $parserOutput->addJsConfigVars( 'wgNSFWFilesOnPage', $nsfw );
+.nsfw-blur img,
+.nsfw-blur .mw-file-element,
+img.nsfw-blur {
+    filter: blur(24px) !important;
 }
-    /** Registers the user preference */
-    public static function onGetPreferences( $user, &$preferences ) {
-         $services = MediaWikiServices::getInstance();
-        $canSeeNSFW = self::isUserOldEnoughForNSFW( $services, $user, 18 );
-        $storedBirthDate = self::getUserBirthDateDefault( $services, $user );
+
+body.nsfw-filepage-blur #file img,
+body.nsfw-filepage-blur #file .mw-file-element,
+body.nsfw-filepage-blur .fullImageLink img,
+body.nsfw-filepage-blur .mw-filepage-other-resolutions img {
+    filter: blur(24px) !important;
+}
+
+body.nsfw-mmv-preblur .mw-mmv-image img,
+body.nsfw-mmv-preblur img.mw-mmv-final-image {
+    filter: blur(24px) !important;
+}
+
+.nsfw-blur img {
+    transition: none !important;
+}
+CSS;
+    }
+
+    /* ============================================================
+     *  PARSER OUTPUT
+     * ========================================================== */
+
+    public static function onOutputPageParserOutput(
+        OutputPage $out,
+        ParserOutput $parserOutput
+    ): void {
+        $services = MediaWikiServices::getInstance();
+        $user = $out->getUser();
+
+        if ( self::userWantsUnblur( $services, $user ) ) {
+            $parserOutput->addJsConfigVars( 'wgNSFWFilesOnPage', [] );
+            return;
+        }
+
+        $media = $parserOutput->getLinkList( ParserOutputLinkTypes::MEDIA );
+        if ( !$media ) {
+            $parserOutput->addJsConfigVars( 'wgNSFWFilesOnPage', [] );
+            return;
+        }
+
+        $nsfw = [];
+
+        foreach ( $media as $item ) {
+            $link = $item['link'] ?? null;
+            if ( !$link || !method_exists( $link, 'getDBkey' ) ) {
+                continue;
+            }
+
+            $fileTitle = Title::makeTitleSafe( NS_FILE, $link->getDBkey() );
+            if ( !$fileTitle ) {
+                continue;
+            }
+
+            if ( self::isFileTitleMarkedNSFW( $services, $fileTitle ) ) {
+                $nsfw[] = $fileTitle->getPrefixedText();
+            }
+        }
+
+        $nsfw = array_values( array_unique( $nsfw ) );
+        sort( $nsfw );
+
+        $parserOutput->addJsConfigVars( 'wgNSFWFilesOnPage', $nsfw );
+    }
+
+    /* ============================================================
+     *  PREFERENCES
+     * ========================================================== */
+
+    public static function onGetPreferences( $user, &$preferences ): bool {
+        $services = MediaWikiServices::getInstance();
+
+        $canSeeNSFW = self::isUserOldEnoughForNSFW( $services, $user );
+        $defaultBirthdate = self::getUserBirthDateDefault( $services, $user );
+
         $preferences[self::OPT_BIRTHDATE] = [
             'type' => 'date',
             'label-message' => 'nsfwblur-birthdate-label',
-            'help-message' => 'nsfwblur-birthdate-help',
+            'help-message'  => 'nsfwblur-birthdate-help',
             'section' => 'personal/info',
-            'default' => $storedBirthDate,
+            'default' => $defaultBirthdate,
             'min' => '1900-01-01',
             'max' => date( 'Y-m-d' ),
             'validation-callback' => [ self::class, 'validateBirthDatePreference' ],
         ];
-        $preferences['nsfwblurred'] = [
+
+        $preferences[self::OPT_UNBLUR] = [
             'type' => 'toggle',
             'label-message' => 'tog-nsfwblurred',
             'section' => 'rendering/files',
@@ -162,23 +161,14 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
             'help-message' => !$canSeeNSFW ? 'nsfwblur-pref-nsfw-age' : null,
             'validation-callback' => [ self::class, 'validateNsfwUnblurPreference' ],
         ];
+
         return true;
     }
 
+    /* ============================================================
+     *  IMAGE BLUR
+     * ========================================================== */
 
-    /** Adds preference to the page rendering hash */
-    public static function onPageRenderingHash( $out, &$hash ): bool {
-        $services = MediaWikiServices::getInstance();
-        $user = RequestContext::getMain()->getUser();
-
-        $userOptionsLookup = $services->getUserOptionsLookup();
-        $nsfwblurred = (bool)$userOptionsLookup->getOption( $user, self::OPT_UNBLUR );
-
-        $hash .= '!' . ( $nsfwblurred ? '1' : '0' );
-        return true;
-    }
-
-    /** ImageBeforeProduceHTML: Blur if needed */
     public static function onImageBeforeProduceHTML(
         &$skin, &$title, &$file, &$frameParams, &$handlerParams, &$time, &$res
     ): bool {
@@ -189,96 +179,46 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
         $services = MediaWikiServices::getInstance();
         $user = RequestContext::getMain()->getUser();
 
-        // If user wants to see NSFW images unblurred, don't blur
         if ( self::userWantsUnblur( $services, $user ) ) {
             return true;
         }
 
-        // Check file description wikitext for marker
         $fileTitle = $file->getTitle();
         if ( !$fileTitle ) {
             return true;
         }
 
-        $descText = self::getPageWikitext( $services, $fileTitle );
-        if ( $descText === null || strpos( $descText, self::NSFW_MARKER ) === false ) {
+        if ( !self::isFileTitleMarkedNSFW( $services, $fileTitle ) ) {
             return true;
         }
 
-        // Add blur class to the IMG
-        $frameParams['class'] = isset( $frameParams['class'] )
-            ? trim( $frameParams['class'] . ' nsfw-blur' )
-            : 'nsfw-blur';
-
-        // Ensure image gets tracked in parser output when available
-        if ( isset( $frameParams['parser'] ) && $frameParams['parser'] instanceof Parser ) {
-            $frameParams['parser']->getOutput()->addImage( $file->getName() );
-        }
+        $frameParams['class'] =
+            trim( ($frameParams['class'] ?? '') . ' nsfw-blur' );
 
         return true;
     }
 
-    /** Helper: user toggle */
-    private static function userWantsUnblur( MediaWikiServices $services, User $user ): bool {
-        if ( !$user->isRegistered() ) {
-            return false;
-        }
-        return (bool)$services->getUserOptionsLookup()->getOption( $user, self::OPT_UNBLUR );
-    }
+    /* ============================================================
+     *  AGE / BIRTHDATE
+     * ========================================================== */
 
-    /** Helper: Get user birth year from user options (private "custom profile field") */
-    private static function getUserPrivateBirthYear( MediaWikiServices $services, User $user ): ?int {
-        $val = $services->getUserOptionsLookup()->getOption( $user, self::OPT_BIRTHDATE, '' );
-
-        if ( $val === '' || $val === null ) {
-            return null;
-        }
-
-        $year = (int)$val;
-        return $year > 0 ? $year : null;
-    }
-    /** Helper: get default birth date for preference display */
-    private static function getUserBirthDateDefault( MediaWikiServices $services, User $user ): string {
-        $val = self::getUserBirthDateOption( $services, $user );
-        if ( $val === '' || $val === null ) {
-            return '';
-        }
-    
-    }
-    private static function getUserBirthDateOption( MediaWikiServices $services, User $user ): ?string {
+    private static function getUserBirthDateOption(
+        MediaWikiServices $services,
+        User $user
+    ): ?string {
         $lookup = $services->getUserOptionsLookup();
         $val = $lookup->getOption( $user, self::OPT_BIRTHDATE, '' );
-        if ( $val !== '' && $val !== null ) {
+
+        if ( $val !== '' ) {
             return $val;
         }
 
-        return $lookup->getOption( $user, self::OPT_BIRTHDATE_LEGACY, '' );
+        return $lookup->getOption( $user, self::OPT_BIRTHDATE_LEGACY, '' ) ?: null;
     }
-    /** Helper: Age check */
-    private static function isUserOldEnoughForNSFW(
-        MediaWikiServices $services,
-        User $user,
-        int $minAge = self::MIN_AGE
-    ): bool {
-        $birthYear = self::getUserPrivateBirthYear( $services, $user );
-        if ( !$birthYear ) {
-            return false;
-        }
-        $thisYear = (int)date( 'Y' );
-        return ( $thisYear - $birthYear ) >= $minAge;
-    }
-    private static function normalizeBirthDateValue( $value ): ?string {
-        $value = trim( (string)$value );
-        if ( $value === '' ) {
-            return null;
-        }
 
+    private static function normalizeBirthDateValue( string $value ): ?string {
         if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ) {
             return $value;
-        }
-
-        if ( preg_match( '/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/', $value ) ) {
-            return substr( $value, 0, 10 );
         }
 
         if ( preg_match( '/^\d{4}$/', $value ) ) {
@@ -287,109 +227,78 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
 
         return null;
     }
-    /** Helper: Get user birth date from user options (private "custom profile field") */
-    private static function getUserPrivateBirthDate( MediaWikiServices $services, User $user ): ?string {
+
+    private static function getUserBirthDateDefault(
+        MediaWikiServices $services,
+        User $user
+    ): string {
         $val = self::getUserBirthDateOption( $services, $user );
-        if ( $val === '' || $val === null ) {
-            return null;
+        if ( !$val ) {
+            return '';
         }
 
-        $normalized = self::normalizeBirthDateValue( $val );
-        return $normalized ?: null;
-    }
-    /** Validate birth year preference input */
-    public static function validateBirthYearPreference( $value, $alldata = null, $user = null ): bool|string {
-        if ( $value === '' || $value === null ) {
-            return true;
-        }
-
-        $year = (int)$value;
-        if ( $year <= 0 ) {
-            return wfMessage( 'nsfwblur-birthyear-invalid' )->text();
-        }
-
-        $thisYear = (int)date( 'Y' );
-        if ( $year < 1900 || $year > $thisYear ) {
-            return wfMessage( 'nsfwblur-birthyear-invalid' )->text();
-        }
-
-        return true;
+        return self::normalizeBirthDateValue( $val ) ?? '';
     }
 
-    /** Validate the unblur toggle so underage users cannot enable it */
-    public static function validateNsfwUnblurPreference( $value, $alldata = null, $user = null ): bool|string {
-        if ( !$value ) {
-            return true;
-        }
-
-        $services = MediaWikiServices::getInstance();
-        $birthYear = null;
-        if ( is_array( $alldata ) && array_key_exists( self::OPT_BIRTHDATE, $alldata ) ) {
-            $birthYear = $alldata[self::OPT_BIRTHDATE];
-        }
-
-        if ( $birthYear !== null && $birthYear !== '' ) {
-            $year = (int)$birthYear;
-            $thisYear = (int)date( 'Y' );
-            if ( $year > 0 && $year <= $thisYear ) {
-                $age = $thisYear - $year;
-                if ( $age >= self::MIN_AGE ) {
-                    return true;
-                }
-            }
-        } elseif ( $user instanceof User ) {
-            if ( self::isUserOldEnoughForNSFW( $services, $user, self::MIN_AGE ) ) {
-                return true;
-            }
-        }
-
-        return wfMessage( 'nsfwblur-pref-nsfw-age' )->text();
+    private static function getUserBirthYear(
+        MediaWikiServices $services,
+        User $user
+    ): ?int {
+        $date = self::getUserBirthDateDefault( $services, $user );
+        return $date ? (int)substr( $date, 0, 4 ) : null;
     }
 
-    /** Optional helper: reset both options for a user */
-    public static function resetNSFWOptionsForUser( UserIdentity $user ): void {
-        $services = MediaWikiServices::getInstance();
-        $mgr = $services->getUserOptionsManager();
+    private static function isUserOldEnoughForNSFW(
+        MediaWikiServices $services,
+        User $user
+    ): bool {
+        $date = self::getUserBirthDateDefault( $services, $user );
+        if ( !$date ) {
+            return false;
+        }
 
-        $mgr->setOption( $user, self::OPT_BIRTHDATE, '' );
-        $mgr->setOption( $user, self::OPT_UNBLUR, false );
-        $mgr->saveOptions( $user );
+        $birth = strtotime( $date );
+        return ( time() - $birth ) >= ( self::MIN_AGE * 31557600 );
     }
 
-    /** Helper: reset the unblur toggle only */
-    private static function resetNSFWBlurredOptionForUser( UserIdentity $user ): void {
-        $services = MediaWikiServices::getInstance();
-        $mgr = $services->getUserOptionsManager();
+    /* ============================================================
+     *  NSFW MARKER DETECTION (HARDENED)
+     * ========================================================== */
 
-        $mgr->setOption( $user, self::OPT_UNBLUR, false );
-        $mgr->saveOptions( $user );
-    }
-
-    /** Helper: check if File: title has marker */
-    private static function isFileTitleMarkedNSFW( MediaWikiServices $services, Title $fileTitle ): bool {
+    private static function isFileTitleMarkedNSFW(
+        MediaWikiServices $services,
+        Title $fileTitle
+    ): bool {
         $text = self::getPageWikitext( $services, $fileTitle );
-        return ( $text !== null && strpos( $text, self::NSFW_MARKER ) !== false );
+        return $text !== null && strpos( $text, self::NSFW_MARKER ) !== false;
     }
 
-    /** Helper: get wikitext for a title (main slot, public) */
-    private static function getPageWikitext( MediaWikiServices $services, Title $title ): ?string {
-        $revision = $services->getRevisionLookup()->getRevisionByTitle( $title );
-        if ( !$revision ) {
+    private static function getPageWikitext(
+        MediaWikiServices $services,
+        Title $title
+    ): ?string {
+        $rev = $services->getRevisionLookup()->getRevisionByTitle( $title );
+        if ( !$rev ) {
             return null;
         }
 
-        $content = $revision->getContent( SlotRecord::MAIN, RevisionRecord::FOR_PUBLIC );
+        $content = $rev->getContent(
+            SlotRecord::MAIN,
+            RevisionRecord::RAW
+        );
+
         if ( !$content ) {
             return null;
         }
 
-        // For wikitext ContentHandler, getText() exists. If you later support JSON/etc,
-        // you may want to handle Content::serialize() instead.
-        return method_exists( $content, 'getText' ) ? $content->getText() : null;
+        return method_exists( $content, 'getText' )
+            ? $content->getText()
+            : null;
     }
+
     private static function applyFilePageBlurClass(
         OutputPage $out,
-        \MediaWiki\MediaWikiServices $services,
+        MediaWikiServices $services,
         bool $userWantsUnblur
     ): void {
         $title = $out->getTitle();
@@ -398,7 +307,7 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
         }
 
         if ( $userWantsUnblur ) {
-            return; // user opted out of blur
+            return;
         }
 
         if ( self::isFileTitleMarkedNSFW( $services, $title ) ) {
@@ -407,5 +316,43 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
         }
     }
 
+    private static function userWantsUnblur(
+        MediaWikiServices $services,
+        User $user
+    ): bool {
+        return $user->isRegistered()
+            && (bool)$services->getUserOptionsLookup()
+                ->getOption( $user, self::OPT_UNBLUR );
+    }
 
+    /* ============================================================
+     *  VALIDATORS
+     * ========================================================== */
+
+    public static function validateBirthDatePreference( $value ): bool|string {
+        if ( $value === '' || $value === null ) {
+            return true;
+        }
+
+        return self::normalizeBirthDateValue( (string)$value )
+            ? true
+            : wfMessage( 'nsfwblur-birthdate-invalid' )->text();
+    }
+
+    public static function validateNsfwUnblurPreference(
+        $value, $alldata = null, $user = null
+    ): bool|string {
+        if ( !$value ) {
+            return true;
+        }
+
+        if ( $user instanceof User ) {
+            $services = MediaWikiServices::getInstance();
+            if ( self::isUserOldEnoughForNSFW( $services, $user ) ) {
+                return true;
+            }
+        }
+
+        return wfMessage( 'nsfwblur-pref-nsfw-age' )->text();
+    }
 }

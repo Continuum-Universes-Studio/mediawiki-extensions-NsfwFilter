@@ -26,3 +26,25 @@ body.nsfw-unblur .mw-mmv-wrapper.nsfw-mmv-blur .mw-mmv-image img {
   transition: none !important;
   filter: blur(24px);
 }
+/* Universal NSFW blur — works for img, figure, gallery, thumbs */
+
+.nsfw-blur img,
+.nsfw-blur .mw-file-element,
+figure.nsfw-blur img,
+figure.nsfw-blur .mw-file-element,
+span.nsfw-blur img,
+span.nsfw-blur .mw-file-element {
+    filter: blur(24px) !important;
+}
+
+/* File: pages */
+body.nsfw-filepage-blur figure img,
+body.nsfw-filepage-blur .mw-file-element {
+    filter: blur(24px) !important;
+}
+
+/* MediaViewer */
+body.nsfw-mmv-preblur .mw-mmv-image img,
+body.nsfw-mmv-preblur img.mw-mmv-final-image {
+    filter: blur(24px) !important;
+}
