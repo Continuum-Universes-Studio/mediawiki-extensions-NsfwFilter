@@ -64,9 +64,14 @@ class Hooks {
         }
 
         $out->addJsConfigVars( [
-            'wgNSFWUnblur'      => $userWantsUnblur,
-            'wgNSFWFilesOnPage' => array_values( array_unique( $nsfw ) ),
+            'wgNSFWUnblur' => $userWantsUnblur,
         ] );
+
+        if ( $out->getTitle() && $out->getTitle()->isContentPage() ) {
+            $out->addJsConfigVars( [
+                'wgNSFWFilesOnPage' => array_values( array_unique( $nsfw ) ),
+            ] );
+        }
 
         $out->addInlineStyle( self::getEarlyInlineCss() );
         $out->addModules( [ 'ext.nsfwblur.top', 'ext.nsfwblur' ] );
