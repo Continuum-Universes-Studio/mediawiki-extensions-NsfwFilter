@@ -7,11 +7,9 @@
    * Utilities
    * ============================== */
 
-  function isTruthy(v) {
-    return v === true || v === 1 || v === '1' || v === 'true';
-  }
+  const isTruthy = v => v === true || v === 1 || v === '1' || v === 'true';
 
-  function normalizeFileTitle(t) {
+  const normalizeFileTitle = t => {
     if (!t) return null;
     try {
       const title = mw.Title.newFromText(String(t));
@@ -19,7 +17,7 @@
     } catch {
       return null;
     }
-  }
+  };
 
   /* ==============================
    * Config
@@ -29,9 +27,7 @@
   const nsfwList = mw.config.get('wgNSFWFilesOnPage') || [];
 
   const nsfwSet = new Set(
-    nsfwList
-      .map(normalizeFileTitle)
-      .filter(Boolean)
+    nsfwList.map(normalizeFileTitle).filter(Boolean)
   );
 
   if (userWantsUnblur) {
@@ -40,29 +36,29 @@
   }
 
   /* ==============================
-   * File title resolver (authoritative)
+   * File title resolver (single source of truth)
    * ============================== */
 
   function resolveFileTitleFromImg(img) {
     if (!img) return null;
 
-    // 1. data-file-name
+    // 1. data-file-name (galleries, widgets)
     const df = img.getAttribute('data-file-name');
     if (df) return normalizeFileTitle('File:' + df);
 
     // 2. data-title
     const dt = img.getAttribute('data-title');
-    if (dt && dt.startsWith('File:')) return normalizeFileTitle(dt);
+    if (dt?.startsWith('File:')) return normalizeFileTitle(dt);
 
     // 3. RDFa / Parsoid
     const resource = img.getAttribute('resource');
-    if (resource && resource.startsWith('File:')) {
+    if (resource?.startsWith('File:')) {
       return normalizeFileTitle(resource);
     }
 
-    // 4. Parent anchor
+    // 4. Parent anchor URL
     const a = img.closest('a[href]');
-    if (a && a.href) {
+    if (a?.href) {
       try {
         const uri = new mw.Uri(a.href);
 
@@ -84,7 +80,7 @@
     return null;
   }
 
-  // Optional debug hook (safe to leave in prod)
+  // Debug helper (intentionally global)
   window.__resolveNSFWFileTitle = resolveFileTitleFromImg;
 
   /* ==============================
@@ -97,13 +93,17 @@
     const title = resolveFileTitleFromImg(img);
     if (!title || !nsfwSet.has(title)) return;
 
+    // Always mark the image itself
     img.classList.add('nsfw-blur');
+
+    // Mark useful ancestors so CSS works in tables & wrappers
     img.closest('a')?.classList.add('nsfw-blur');
+    img.closest('td')?.classList.add('nsfw-blur');
+    img.closest('.mw-file-element')?.classList.add('nsfw-blur');
   }
 
-  function scan(root) {
-    const scope = root || document;
-    scope.querySelectorAll('img').forEach(markImageIfNSFW);
+  function scan(root = document) {
+    root.querySelectorAll('img').forEach(markImageIfNSFW);
   }
 
   /* ==============================
@@ -132,12 +132,12 @@
   }
 
   $(function () {
-    scan(document);
+    scan();
     observeLateImages();
   });
 
-  mw.hook('wikipage.content').add(function ($content) {
-    scan($content?.[0] || document);
+  mw.hook('wikipage.content').add($content => {
+    scan($content?.[0]);
   });
 
 })();

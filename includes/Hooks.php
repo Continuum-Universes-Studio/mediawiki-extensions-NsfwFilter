@@ -17,6 +17,8 @@ use Parser;
 use Title;
 use MediaWiki\User\UserIdentity;
 use User;
+use MediaWiki\Pager\ImageListPager;
+use MediaWiki\User\UserRigorOptions;
 
 class Hooks {
 
@@ -107,6 +109,86 @@ CSS;
     /* ============================================================
  *  PARSER OUTPUT — AUTHORITATIVE NSFW LIST
  * ========================================================== */
+    public static function onSpecialPageAfterExecute( $special, $subPage ): void {
+        // Robust: don’t hard-depend on class names if you don’t want to.
+        if ( !method_exists( $special, 'getName' ) || $special->getName() !== 'ListFiles' ) {
+            return;
+        }
+
+        $out = $special->getOutput();
+        $services = MediaWikiServices::getInstance();
+        $user = $out->getUser();
+
+        // If user can/has opted out of blur, keep list empty.
+        if ( self::userWantsUnblur( $services, $user ) ) {
+            $out->addJsConfigVars( 'wgNSFWFilesOnPage', [] );
+            return;
+        }
+
+        $request = $special->getRequest();
+        $including = method_exists( $special, 'including' ) ? (bool)$special->including() : false;
+
+        // Match core’s parameter handling for Special:ListFiles. :contentReference[oaicite:3]{index=3}
+        if ( $including ) {
+            $userName = (string)$subPage;
+            $search = '';
+            $showAll = false;
+        } else {
+            $userName = $request->getText( 'user', $subPage ?? '' );
+            $search   = $request->getText( 'ilsearch', '' );
+            $showAll  = $request->getBool( 'ilshowall', false );
+        }
+
+        // Normalize username like core does.
+        $canonical = $services->getUserNameUtils()->getCanonical( $userName, UserRigorOptions::RIGOR_NONE );
+        if ( $canonical !== false ) {
+            $userName = $canonical;
+        }
+
+        // Build the same pager core uses (SpecialListFiles -> ImageListPager). :contentReference[oaicite:4]{index=4}
+        $pager = new ImageListPager(
+            $special->getContext(),
+            $services->getCommentStore(),
+            $special->getLinkRenderer(),
+            $services->getConnectionProvider(),
+            $services->getRepoGroup(),
+            $services->getUserNameUtils(),
+            $services->getCommentFormatter(),
+            $services->getLinkBatchFactory(),
+            $userName,
+            $search,
+            $including,
+            $showAll
+        );
+
+        // Run the pager query and inspect rows.
+        // IndexPager::doQuery is public. :contentReference[oaicite:5]{index=5}
+        $pager->doQuery();
+        $res = $pager->getResult();
+
+        $nsfw = [];
+
+        foreach ( $res as $row ) {
+            // ImageListPager includes img_name in its query fields. :contentReference[oaicite:6]{index=6}
+            if ( empty( $row->img_name ) ) {
+                continue;
+            }
+
+            $fileTitle = Title::makeTitleSafe( NS_FILE, $row->img_name );
+            if ( !$fileTitle ) {
+                continue;
+            }
+
+            if ( self::isFileTitleMarkedNSFW( $fileTitle ) ) {
+                $nsfw[] = $fileTitle->getPrefixedText();
+            }
+        }
+
+        $nsfw = array_values( array_unique( $nsfw ) );
+        sort( $nsfw );
+
+        $out->addJsConfigVars( 'wgNSFWFilesOnPage', $nsfw );
+    }
 
     public static function onOutputPageParserOutput(
         OutputPage $out,
@@ -186,17 +268,16 @@ CSS;
      *  IMAGE BLUR
      * ========================================================== */
 
-      public static function onImageBeforeProduceHTML(
-        &$skin, &$title, &$file, &$frameParams, &$handlerParams, &$time, &$res
+    public static function onImageBeforeProduceHTML(
+        &$skin,
+        &$title,
+        &$file,
+        &$frameParams,
+        &$handlerParams,
+        &$time,
+        &$res
     ): bool {
         if ( !$file ) {
-            return true;
-        }
-
-        $services = MediaWikiServices::getInstance();
-        $user = RequestContext::getMain()->getUser();
-
-        if ( self::userWantsUnblur( $services, $user ) ) {
             return true;
         }
 
@@ -205,10 +286,12 @@ CSS;
             return true;
         }
 
-        if ( !self::isFileTitleMarkedNSFW( $services, $fileTitle ) ) {
+        // ✅ Authoritative check
+        if ( !self::isFileTitleMarkedNSFW( $fileTitle ) ) {
             return true;
         }
 
+        // Apply blur classes
         $frameParams['class'] =
             trim( ($frameParams['class'] ?? '') . ' nsfw-blur' );
         $frameParams['img-class'] =
@@ -218,6 +301,7 @@ CSS;
 
         return true;
     }
+
 
     /* ============================================================
      *  AGE / BIRTHDATE
@@ -346,7 +430,7 @@ CSS;
             return; // user opted out of blur
         }
 
-        if ( self::isFileTitleMarkedNSFW( $services, $title ) ) {
+        if ( self::isFileTitleMarkedNSFW( $title ) ) {
             $out->addBodyClasses( 'nsfw-filepage-blur' );
             $out->addJsConfigVars( 'wgNSFWFilePage', true );
         }

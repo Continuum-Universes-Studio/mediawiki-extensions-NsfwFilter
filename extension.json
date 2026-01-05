@@ -63,6 +63,7 @@
         "GetPreferences": "NSFWBlur\\Hooks::onGetPreferences",
         "PageRenderingHash": "NSFWBlur\\Hooks::onPageRenderingHash",
         "UserGetDefaultOptions": "NSFWBlur\\Hooks::onUserGetDefaultOptions",
-        "UserSaveOptions": "NSFWBlur\\Hooks::onUserSaveOptions"
+        "UserSaveOptions": "NSFWBlur\\Hooks::onUserSaveOptions",
+        "SpecialPageAfterExecute": "NSFWBlur\\Hooks::onSpecialPageAfterExecute"
     }
 }
