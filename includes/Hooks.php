@@ -209,6 +209,9 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
         $frameParams['class'] = isset( $frameParams['class'] )
             ? trim( $frameParams['class'] . ' nsfw-blur' )
             : 'nsfw-blur';
+        $handlerParams['img-class'] = isset( $handlerParams['img-class'] )
+            ? trim( $handlerParams['img-class'] . ' nsfw-blur' )
+            : 'nsfw-blur';
 
         // Ensure image gets tracked in parser output when available
         if ( isset( $frameParams['parser'] ) && $frameParams['parser'] instanceof Parser ) {
