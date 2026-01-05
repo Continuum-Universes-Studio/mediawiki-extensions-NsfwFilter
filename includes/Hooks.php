@@ -358,8 +358,11 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
                     }
                 }
             }
-        } elseif ( $user instanceof User ) {
-            if ( self::isUserOldEnoughForNSFW( $services, $user, self::MIN_AGE ) ) {
+        } elseif ( $user instanceof UserIdentity ) {
+            $userObj = $user instanceof User
+                ? $user
+                : $services->getUserFactory()->newFromUserIdentity( $user );
+            if ( self::isUserOldEnoughForNSFW( $services, $userObj, self::MIN_AGE ) ) {
                 return true;
             }
         }
