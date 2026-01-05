@@ -142,9 +142,6 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
     public static function onGetPreferences( $user, &$preferences ) {
         $services = MediaWikiServices::getInstance();
         $canSeeNSFW = self::isUserOldEnoughForNSFW( $services, $user, 18 );
-        if ( !$canSeeNSFW ) {
-            self::resetNSFWBlurredOptionForUser( $user );
-        }
         $storedBirthDate = self::getUserBirthDateDefault( $services, $user );
         $preferences[self::OPT_BIRTHDATE] = [
             'type' => 'date',
@@ -161,7 +158,6 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
             'label-message' => 'tog-nsfwblurred',
             'section' => 'rendering/files',
             'default' => false,
-            'disabled' => !$canSeeNSFW,
             'help-message' => !$canSeeNSFW ? 'nsfwblur-pref-nsfw-age' : null,
             'validation-callback' => [ self::class, 'validateNsfwUnblurPreference' ],
         ];
@@ -251,7 +247,7 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
         return $normalized ?: null;
     }
 
-    /** Normalize stored birth date values (accepts YYYY-MM-DD or YYYY) */
+    /** Normalize stored birth date values (accepts YYYY-MM-DD, YYYY, or YYYY-MM-DD HH:MM:SS) */
     private static function normalizeBirthDateValue( $value ): ?string {
         $value = trim( (string)$value );
         if ( $value === '' ) {
@@ -260,6 +256,10 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
 
         if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ) {
             return $value;
+        }
+
+        if ( preg_match( '/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/', $value ) ) {
+            return substr( $value, 0, 10 );
         }
 
         if ( preg_match( '/^\d{4}$/', $value ) ) {
@@ -375,15 +375,6 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
         $mgr = $services->getUserOptionsManager();
 
         $mgr->setOption( $user, self::OPT_BIRTHDATE, '' );
-        $mgr->setOption( $user, self::OPT_UNBLUR, false );
-        $mgr->saveOptions( $user );
-    }
-
-    /** Helper: reset the unblur toggle only */
-    private static function resetNSFWBlurredOptionForUser( UserIdentity $user ): void {
-        $services = MediaWikiServices::getInstance();
-        $mgr = $services->getUserOptionsManager();
-
         $mgr->setOption( $user, self::OPT_UNBLUR, false );
         $mgr->saveOptions( $user );
     }
