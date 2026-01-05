@@ -80,21 +80,67 @@ mw.hook('wikipage.content').add(($content) => {
     if (!nsfwFiles.length) return;
 
     const fileSet = new Set(
-        nsfwFiles.map(t => t.replace(/^File:/, '').toLowerCase())
+        nsfwFiles.map((t) => {
+            const title = mw.Title.newFromText(String(t));
+            const key = title ? title.getDBkey() : String(t).replace(/^File:/, '');
+            return key.toLowerCase();
+        })
     );
+
+    function extractFilenameFromImage(img) {
+        const directTitle = img.getAttribute('data-file-title')
+            || img.closest('figure')?.getAttribute('data-file-title');
+
+        if (directTitle) {
+            const title = mw.Title.newFromText(String(directTitle));
+            if (title) {
+                return title.getDBkey();
+            }
+        }
+
+        const src = img.getAttribute('src') || img.getAttribute('data-src');
+        if (!src) return null;
+
+        let path = src;
+        try {
+            const uri = new mw.Uri(src);
+            if (uri.path) {
+                path = uri.path;
+            }
+        } catch (e) {}
+
+        const parts = decodeURIComponent(path)
+            .split('/')
+            .filter(Boolean);
+
+        if (!parts.length) return null;
+
+        const thumbIndex = parts.indexOf('thumb');
+        if (thumbIndex !== -1 && parts.length > thumbIndex + 2) {
+            return parts[parts.length - 2];
+        }
+
+        return parts[parts.length - 1];
+    }
 
     $content.find('img').each(function () {
         const img = this;
-        const src = img.getAttribute('src');
-        if (!src) return;
+        const rawFilename = extractFilenameFromImage(img);
+        if (!rawFilename) return;
 
-        const match = decodeURIComponent(src)
-            .toLowerCase()
-            .match(/\/([^\/?#]+)$/);
+        const filename = rawFilename
+            .replace(/^(?:lossy-)?(?:page\d+-)?\d+px-/i, '')
+            .replace(/ /g, '_')
+            .toLowerCase();
 
-        if (!match) return;
+<<<<<<< ours
+        const filename = match[1]
+            .replace(/^(?:lossy-)?(?:page\d+-)?\d+px-/i, '')
+            .replace(/ /g, '_');
 
-        if (fileSet.has(match[1])) {
+=======
+>>>>>>> theirs
+        if (fileSet.has(filename)) {
             img.classList.add('nsfw-blur');
             img.closest('figure')?.classList.add('nsfw-blur');
         }
