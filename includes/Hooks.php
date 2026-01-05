@@ -145,12 +145,13 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
         if ( !$canSeeNSFW ) {
             self::resetNSFWBlurredOptionForUser( $user );
         }
+        $storedBirthYear = $services->getUserOptionsLookup()->getOption( $user, self::OPT_BIRTHYR, '' );
         $preferences[self::OPT_BIRTHYR] = [
             'type' => 'int',
             'label-message' => 'nsfwblur-birthyear-label',
             'help-message' => 'nsfwblur-birthyear-help',
             'section' => 'personal/info',
-            'default' => '',
+            'default' => $storedBirthYear,
             'validation-callback' => [ self::class, 'validateBirthYearPreference' ],
         ];
         $preferences['nsfwblurred'] = [
