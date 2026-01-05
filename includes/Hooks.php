@@ -251,7 +251,7 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
         return $normalized ?: null;
     }
 
-    /** Normalize stored birth date values (accepts YYYY-MM-DD or YYYY) */
+    /** Normalize stored birth date values (accepts YYYY-MM-DD, YYYY, or YYYY-MM-DD HH:MM:SS) */
     private static function normalizeBirthDateValue( $value ): ?string {
         $value = trim( (string)$value );
         if ( $value === '' ) {
@@ -260,6 +260,10 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
 
         if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ) {
             return $value;
+        }
+
+        if ( preg_match( '/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/', $value ) ) {
+            return substr( $value, 0, 10 );
         }
 
         if ( preg_match( '/^\d{4}$/', $value ) ) {
