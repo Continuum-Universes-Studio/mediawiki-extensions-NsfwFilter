@@ -75,3 +75,28 @@
     init(node);
   });
 })();
+mw.hook('wikipage.content').add(($content) => {
+    const nsfwFiles = mw.config.get('wgNSFWFilesOnPage') || [];
+    if (!nsfwFiles.length) return;
+
+    const fileSet = new Set(
+        nsfwFiles.map(t => t.replace(/^File:/, '').toLowerCase())
+    );
+
+    $content.find('img').each(function () {
+        const img = this;
+        const src = img.getAttribute('src');
+        if (!src) return;
+
+        const match = decodeURIComponent(src)
+            .toLowerCase()
+            .match(/\/([^\/?#]+)$/);
+
+        if (!match) return;
+
+        if (fileSet.has(match[1])) {
+            img.classList.add('nsfw-blur');
+            img.closest('figure')?.classList.add('nsfw-blur');
+        }
+    });
+});

@@ -54,7 +54,7 @@
         ]
     },
     "DefaultUserOptions": {
-        "nsfwblurred": false
+          "nsfwblurred": 0
     },
     "Hooks": {
         "BeforePageDisplay": [
