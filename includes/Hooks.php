@@ -351,12 +351,70 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
         return wfMessage( 'nsfwblur-pref-nsfw-age' )->text();
     }
 
+    /** Validate birth year preference input */
+    public static function validateBirthYearPreference( $value, $alldata = null, $user = null ): bool|string {
+        if ( $value === '' || $value === null ) {
+            return true;
+        }
+
+        $year = (int)$value;
+        if ( $year <= 0 ) {
+            return wfMessage( 'nsfwblur-birthyear-invalid' )->text();
+        }
+
+        $thisYear = (int)date( 'Y' );
+        if ( $year < 1900 || $year > $thisYear ) {
+            return wfMessage( 'nsfwblur-birthyear-invalid' )->text();
+        }
+
+        return true;
+    }
+
+    /** Validate the unblur toggle so underage users cannot enable it */
+    public static function validateNsfwUnblurPreference( $value, $alldata = null, $user = null ): bool|string {
+        if ( !$value ) {
+            return true;
+        }
+
+        $services = MediaWikiServices::getInstance();
+        $birthYear = null;
+        if ( is_array( $alldata ) && array_key_exists( self::OPT_BIRTHYR, $alldata ) ) {
+            $birthYear = $alldata[self::OPT_BIRTHYR];
+        }
+
+        if ( $birthYear !== null && $birthYear !== '' ) {
+            $year = (int)$birthYear;
+            $thisYear = (int)date( 'Y' );
+            if ( $year > 0 && $year <= $thisYear ) {
+                $age = $thisYear - $year;
+                if ( $age >= self::MIN_AGE ) {
+                    return true;
+                }
+            }
+        } elseif ( $user instanceof User ) {
+            if ( self::isUserOldEnoughForNSFW( $services, $user, self::MIN_AGE ) ) {
+                return true;
+            }
+        }
+
+        return wfMessage( 'nsfwblur-pref-nsfw-age' )->text();
+    }
+
     /** Optional helper: reset both options for a user */
     public static function resetNSFWOptionsForUser( UserIdentity $user ): void {
         $services = MediaWikiServices::getInstance();
         $mgr = $services->getUserOptionsManager();
 
         $mgr->setOption( $user, self::OPT_BIRTHDATE, '' );
+        $mgr->setOption( $user, self::OPT_UNBLUR, false );
+        $mgr->saveOptions( $user );
+    }
+
+    /** Helper: reset the unblur toggle only */
+    private static function resetNSFWBlurredOptionForUser( UserIdentity $user ): void {
+        $services = MediaWikiServices::getInstance();
+        $mgr = $services->getUserOptionsManager();
+
         $mgr->setOption( $user, self::OPT_UNBLUR, false );
         $mgr->saveOptions( $user );
     }
