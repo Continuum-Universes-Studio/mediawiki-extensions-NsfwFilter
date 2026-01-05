@@ -57,26 +57,12 @@
           "nsfwblurred": 0
     },
     "Hooks": {
-        "BeforePageDisplay": [
-            "NSFWBlur\\Hooks::onBeforePageDisplay"
-        ],
-        "OutputPageParserOutput": [
-            "NSFWBlur\\Hooks::onOutputPageParserOutput"
-        ],
-        "ImageBeforeProduceHTML": [
-            "NSFWBlur\\Hooks::onImageBeforeProduceHTML"
-        ],
-        "GetPreferences": [
-            "NSFWBlur\\Hooks::onGetPreferences"
-        ],
-        "PageRenderingHash": [
-            "NSFWBlur\\Hooks::onPageRenderingHash"
-        ],
-        "UserGetDefaultOptions": [
-            "NSFWBlur\\Hooks::onUserGetDefaultOptions"
-        ],
-        "UserSaveOptions": [
-            "NSFWBlur\\Hooks::onUserSaveOptions"
-        ]
+        "BeforePageDisplay": "NSFWBlur\\Hooks::onBeforePageDisplay",
+        "OutputPageParserOutputComplete": "NSFWBlur\\Hooks::onOutputPageParserOutput",
+        "ImageBeforeProduceHTML": "NSFWBlur\\Hooks::onImageBeforeProduceHTML",
+        "GetPreferences": "NSFWBlur\\Hooks::onGetPreferences",
+        "PageRenderingHash": "NSFWBlur\\Hooks::onPageRenderingHash",
+        "UserGetDefaultOptions": "NSFWBlur\\Hooks::onUserGetDefaultOptions",
+        "UserSaveOptions": "NSFWBlur\\Hooks::onUserSaveOptions"
     }
 }

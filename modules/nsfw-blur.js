@@ -1,148 +1,143 @@
-/* modules/nsfw-blur.js */
-/* Keep your “existing” non-top logic here. This file intentionally avoids touching MMV classes
- * so it doesn’t compete with nsfw-blur.top.js.
- */
 (function () {
   'use strict';
 
-  // ---- basic gating (same helper so behavior is consistent) ----
+  console.log('[NSFW] nsfw-blur.js loaded');
+
+  /* ==============================
+   * Utilities
+   * ============================== */
+
   function isTruthy(v) {
     return v === true || v === 1 || v === '1' || v === 'true';
   }
 
-  var userWantsUnblur = isTruthy(mw.config.get('wgNSFWUnblur'));
-  var nsfwList = mw.config.get('wgNSFWFilesOnPage') || [];
-  var nsfwSet = new Set(nsfwList.map(String));
+  function normalizeFileTitle(t) {
+    if (!t) return null;
+    try {
+      const title = mw.Title.newFromText(String(t));
+      return title ? title.getPrefixedText() : null;
+    } catch {
+      return null;
+    }
+  }
 
-  // Example: blur/unblur on-page images already tagged by PHP (img.nsfw-blur OR wrapper.nsfw-blur)
-  function applyOnPageBlurState(root) {
-    var scope = root || document;
+  /* ==============================
+   * Config
+   * ============================== */
 
-    // If user wants unblur, remove blur effects via body class or direct styles.
-    // Prefer CSS body class in your stylesheet; this is a safety net.
-    if (userWantsUnblur) {
-      scope.querySelectorAll('img.nsfw-blur, .nsfw-blur img, .nsfw-blur .mw-file-element').forEach(function (el) {
-        el.style.filter = 'none';
-      });
-      return;
+  const userWantsUnblur = isTruthy(mw.config.get('wgNSFWUnblur'));
+  const nsfwList = mw.config.get('wgNSFWFilesOnPage') || [];
+
+  const nsfwSet = new Set(
+    nsfwList
+      .map(normalizeFileTitle)
+      .filter(Boolean)
+  );
+
+  if (userWantsUnblur) {
+    document.documentElement.classList.add('nsfw-unblur');
+    return; // CSS handles everything
+  }
+
+  /* ==============================
+   * File title resolver (authoritative)
+   * ============================== */
+
+  function resolveFileTitleFromImg(img) {
+    if (!img) return null;
+
+    // 1. data-file-name
+    const df = img.getAttribute('data-file-name');
+    if (df) return normalizeFileTitle('File:' + df);
+
+    // 2. data-title
+    const dt = img.getAttribute('data-title');
+    if (dt && dt.startsWith('File:')) return normalizeFileTitle(dt);
+
+    // 3. RDFa / Parsoid
+    const resource = img.getAttribute('resource');
+    if (resource && resource.startsWith('File:')) {
+      return normalizeFileTitle(resource);
     }
 
-    // Otherwise ensure blur is applied (safety net; CSS should do most of this)
-    scope.querySelectorAll('img.nsfw-blur, .nsfw-blur img, .nsfw-blur .mw-file-element').forEach(function (el) {
-      el.style.filter = '';
-    });
+    // 4. Parent anchor
+    const a = img.closest('a[href]');
+    if (a && a.href) {
+      try {
+        const uri = new mw.Uri(a.href);
+
+        // /w/index.php?title=File:Foo.png
+        if (uri.query?.title) {
+          return normalizeFileTitle(uri.query.title);
+        }
+
+        // /wiki/File:Foo.png
+        if (uri.path) {
+          const m = uri.path.match(/\/wiki\/(File:[^?#]+)/);
+          if (m) {
+            return normalizeFileTitle(decodeURIComponent(m[1]));
+          }
+        }
+      } catch {}
+    }
+
+    return null;
   }
 
-  // Optional: if you want to mark additional links/images from the config list
-  // (useful if class application is inconsistent across skins)
-  function markAnchorsByConfig(root) {
-    if (userWantsUnblur) return;
+  // Optional debug hook (safe to leave in prod)
+  window.__resolveNSFWFileTitle = resolveFileTitleFromImg;
 
-    var scope = root || document;
-    scope.querySelectorAll('a[href]').forEach(function (a) {
-      // Light-touch: only mark if it’s a File: link and in our list
-      if (!a.href || a.classList.contains('nsfw-blur')) return;
+  /* ==============================
+   * Marking logic
+   * ============================== */
 
-      // Use mw.Uri to extract title param if present
-      var t = null;
-      try {
-        var uri = new mw.Uri(a.href);
-        if (uri.query && uri.query.title) {
-          var titleObj = mw.Title.newFromText(String(uri.query.title));
-          t = titleObj ? titleObj.getPrefixedText() : null;
+  function markImageIfNSFW(img) {
+    if (!img || img.classList.contains('nsfw-blur')) return;
+
+    const title = resolveFileTitleFromImg(img);
+    if (!title || !nsfwSet.has(title)) return;
+
+    img.classList.add('nsfw-blur');
+    img.closest('a')?.classList.add('nsfw-blur');
+  }
+
+  function scan(root) {
+    const scope = root || document;
+    scope.querySelectorAll('img').forEach(markImageIfNSFW);
+  }
+
+  /* ==============================
+   * Observers & hooks
+   * ============================== */
+
+  function observeLateImages() {
+    const observer = new MutationObserver(mutations => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+
+          if (node.tagName === 'IMG') {
+            markImageIfNSFW(node);
+          } else if (node.querySelector) {
+            scan(node);
+          }
         }
-      } catch (e) {}
-
-      if (t && nsfwSet.has(t)) {
-        a.classList.add('nsfw-blur');
-        var img = a.querySelector('img');
-        if (img) img.classList.add('nsfw-blur');
       }
     });
-  }
 
-  function init(root) {
-    applyOnPageBlurState(root);
-    markAnchorsByConfig(root);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
   }
 
   $(function () {
-    init(document);
+    scan(document);
+    observeLateImages();
   });
 
   mw.hook('wikipage.content').add(function ($content) {
-    var node = ($content && $content[0]) ? $content[0] : document;
-    init(node);
+    scan($content?.[0] || document);
   });
+
 })();
-mw.hook('wikipage.content').add(($content) => {
-    const nsfwFiles = mw.config.get('wgNSFWFilesOnPage') || [];
-    if (!nsfwFiles.length) return;
-
-    const fileSet = new Set(
-        nsfwFiles.map((t) => {
-            const title = mw.Title.newFromText(String(t));
-            const key = title ? title.getDBkey() : String(t).replace(/^File:/, '');
-            return key.toLowerCase();
-        })
-    );
-
-    function extractFilenameFromImage(img) {
-        const directTitle = img.getAttribute('data-file-title')
-            || img.closest('figure')?.getAttribute('data-file-title');
-
-        if (directTitle) {
-            const title = mw.Title.newFromText(String(directTitle));
-            if (title) {
-                return title.getDBkey();
-            }
-        }
-
-        const src = img.getAttribute('src') || img.getAttribute('data-src');
-        if (!src) return null;
-
-        let path = src;
-        try {
-            const uri = new mw.Uri(src);
-            if (uri.path) {
-                path = uri.path;
-            }
-        } catch (e) {}
-
-        const parts = decodeURIComponent(path)
-            .split('/')
-            .filter(Boolean);
-
-        if (!parts.length) return null;
-
-        const thumbIndex = parts.indexOf('thumb');
-        if (thumbIndex !== -1 && parts.length > thumbIndex + 2) {
-            return parts[parts.length - 2];
-        }
-
-        return parts[parts.length - 1];
-    }
-
-    $content.find('img').each(function () {
-        const img = this;
-        const rawFilename = extractFilenameFromImage(img);
-        if (!rawFilename) return;
-
-        const filename = rawFilename
-            .replace(/^(?:lossy-)?(?:page\d+-)?\d+px-/i, '')
-            .replace(/ /g, '_')
-            .toLowerCase();
-
-<<<<<<< ours
-        const filename = match[1]
-            .replace(/^(?:lossy-)?(?:page\d+-)?\d+px-/i, '')
-            .replace(/ /g, '_');
-
-=======
->>>>>>> theirs
-        if (fileSet.has(filename)) {
-            img.classList.add('nsfw-blur');
-            img.closest('figure')?.classList.add('nsfw-blur');
-        }
-    });
-});

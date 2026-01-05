@@ -32,23 +32,38 @@ class Hooks {
      *  PAGE DISPLAY
      * ========================================================== */
 
-    public static function onBeforePageDisplay( OutputPage $out, Skin $skin ): bool {
+    public static function onBeforePageDisplay(
+        OutputPage $out,
+        Skin $skin
+    ): bool {
         $services = MediaWikiServices::getInstance();
         $user = $out->getUser();
 
-        $userWantsUnblur = false;
-        $birthYear = null;
+        $userWantsUnblur = self::userWantsUnblur( $services, $user );
+        $nsfw = [];
 
-        if ( $user->isRegistered() ) {
-            $opts = $services->getUserOptionsLookup();
-            $userWantsUnblur = (bool)$opts->getOption( $user, self::OPT_UNBLUR );
-            $birthYear = self::getUserBirthYear( $services, $user );
+        if (
+            !$userWantsUnblur &&
+            $out->getTitle() &&
+            $out->getTitle()->isContentPage()
+        ) {
+            $images = $out->getProperty( 'nsfw-image-dbkeys' ) ?? [];
+
+            foreach ( $images as $dbKey ) {
+                $fileTitle = Title::makeTitleSafe( NS_FILE, $dbKey );
+                if ( !$fileTitle ) {
+                    continue;
+                }
+
+                if ( self::isFileTitleMarkedNSFW( $fileTitle ) ) {
+                    $nsfw[] = $fileTitle->getPrefixedText();
+                }
+            }
         }
 
         $out->addJsConfigVars( [
-            'wgPrivateBirthYear' => $birthYear,
-            'wgNSFWUnblur'       => $userWantsUnblur,
-            'wgNSFWFilesOnPage'  => [],
+            'wgNSFWUnblur'      => $userWantsUnblur,
+            'wgNSFWFilesOnPage' => array_values( array_unique( $nsfw ) ),
         ] );
 
         $out->addInlineStyle( self::getEarlyInlineCss() );
@@ -59,6 +74,9 @@ class Hooks {
 
         return true;
     }
+
+
+
 
     private static function getEarlyInlineCss(): string {
         return <<<'CSS'
@@ -87,8 +105,8 @@ CSS;
     }
 
     /* ============================================================
-     *  PARSER OUTPUT
-     * ========================================================== */
+ *  PARSER OUTPUT — AUTHORITATIVE NSFW LIST
+ * ========================================================== */
 
     public static function onOutputPageParserOutput(
         OutputPage $out,
@@ -102,26 +120,22 @@ CSS;
             return;
         }
 
-        $media = $parserOutput->getLinkList( ParserOutputLinkTypes::MEDIA );
-        if ( !$media ) {
+        // 🔑 THIS is the correct call
+        $images = $parserOutput->getImages();
+        if ( !$images ) {
             $parserOutput->addJsConfigVars( 'wgNSFWFilesOnPage', [] );
             return;
         }
 
         $nsfw = [];
 
-        foreach ( $media as $item ) {
-            $link = $item['link'] ?? null;
-            if ( !$link || !method_exists( $link, 'getDBkey' ) ) {
-                continue;
-            }
-
-            $fileTitle = Title::makeTitleSafe( NS_FILE, $link->getDBkey() );
+        foreach ( array_keys( $images ) as $dbKey ) {
+            $fileTitle = Title::makeTitleSafe( NS_FILE, $dbKey );
             if ( !$fileTitle ) {
                 continue;
             }
 
-            if ( self::isFileTitleMarkedNSFW( $services, $fileTitle ) ) {
+            if ( self::isFileTitleMarkedNSFW( $fileTitle ) ) {
                 $nsfw[] = $fileTitle->getPrefixedText();
             }
         }
@@ -131,6 +145,9 @@ CSS;
 
         $parserOutput->addJsConfigVars( 'wgNSFWFilesOnPage', $nsfw );
     }
+
+
+
 
     /* ============================================================
      *  PREFERENCES
@@ -169,7 +186,7 @@ CSS;
      *  IMAGE BLUR
      * ========================================================== */
 
-    public static function onImageBeforeProduceHTML(
+      public static function onImageBeforeProduceHTML(
         &$skin, &$title, &$file, &$frameParams, &$handlerParams, &$time, &$res
     ): bool {
         if ( !$file ) {
@@ -194,6 +211,10 @@ CSS;
 
         $frameParams['class'] =
             trim( ($frameParams['class'] ?? '') . ' nsfw-blur' );
+        $frameParams['img-class'] =
+            trim( ($frameParams['img-class'] ?? '') . ' nsfw-blur' );
+        $handlerParams['class'] =
+            trim( ($handlerParams['class'] ?? '') . ' nsfw-blur' );
 
         return true;
     }
@@ -265,13 +286,28 @@ CSS;
      *  NSFW MARKER DETECTION (HARDENED)
      * ========================================================== */
 
-    private static function isFileTitleMarkedNSFW(
-        MediaWikiServices $services,
-        Title $fileTitle
-    ): bool {
-        $text = self::getPageWikitext( $services, $fileTitle );
-        return $text !== null && strpos( $text, self::NSFW_MARKER ) !== false;
+    private static function isFileTitleMarkedNSFW( Title $fileTitle ): bool {
+        $services = MediaWikiServices::getInstance();
+        $revLookup = $services->getRevisionLookup();
+
+        $revision = $revLookup->getRevisionByTitle( $fileTitle );
+        if ( !$revision ) {
+            return false;
+        }
+
+        $content = $revision->getContent(
+            SlotRecord::MAIN,
+            RevisionRecord::FOR_PUBLIC
+        );
+
+        if ( !$content || !method_exists( $content, 'getText' ) ) {
+            return false;
+        }
+
+        return strpos( $content->getText(), self::NSFW_MARKER ) !== false;
     }
+
+
 
     private static function getPageWikitext(
         MediaWikiServices $services,
@@ -298,7 +334,7 @@ CSS;
 
     private static function applyFilePageBlurClass(
         OutputPage $out,
-        MediaWikiServices $services,
+        \MediaWiki\MediaWikiServices $services,
         bool $userWantsUnblur
     ): void {
         $title = $out->getTitle();
@@ -307,7 +343,7 @@ CSS;
         }
 
         if ( $userWantsUnblur ) {
-            return;
+            return; // user opted out of blur
         }
 
         if ( self::isFileTitleMarkedNSFW( $services, $title ) ) {
@@ -315,6 +351,7 @@ CSS;
             $out->addJsConfigVars( 'wgNSFWFilePage', true );
         }
     }
+
 
     private static function userWantsUnblur(
         MediaWikiServices $services,
