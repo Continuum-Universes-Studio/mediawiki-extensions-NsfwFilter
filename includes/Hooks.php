@@ -22,7 +22,8 @@ class Hooks {
 
     private const NSFW_MARKER = '__NSFW__';
     private const OPT_UNBLUR  = 'nsfwblurred';     // toggle: show NSFW unblurred
-    private const OPT_BIRTHDATE = 'nsfw_birthyear';  // private date field (YYYY-MM-DD)
+    private const OPT_BIRTHDATE = 'nsfw_birthdate';  // private date field (YYYY-MM-DD)
+    private const OPT_BIRTHDATE_LEGACY = 'nsfw_birthyear';
     private const MIN_AGE     = 18;
 
     /** Adds JS config vars for age/gating + loads modules/styles early */
@@ -142,9 +143,6 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
     public static function onGetPreferences( $user, &$preferences ) {
         $services = MediaWikiServices::getInstance();
         $canSeeNSFW = self::isUserOldEnoughForNSFW( $services, $user, 18 );
-        if ( !$canSeeNSFW ) {
-            self::resetNSFWBlurredOptionForUser( $user );
-        }
         $storedBirthDate = self::getUserBirthDateDefault( $services, $user );
         $preferences[self::OPT_BIRTHDATE] = [
             'type' => 'date',
@@ -161,7 +159,6 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
             'label-message' => 'tog-nsfwblurred',
             'section' => 'rendering/files',
             'default' => false,
-            'disabled' => !$canSeeNSFW,
             'help-message' => !$canSeeNSFW ? 'nsfwblur-pref-nsfw-age' : null,
             'validation-callback' => [ self::class, 'validateNsfwUnblurPreference' ],
         ];
@@ -231,7 +228,7 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
 
     /** Helper: get default birth date for preference display */
     private static function getUserBirthDateDefault( MediaWikiServices $services, User $user ): string {
-        $val = $services->getUserOptionsLookup()->getOption( $user, self::OPT_BIRTHDATE, '' );
+        $val = self::getUserBirthDateOption( $services, $user );
         if ( $val === '' || $val === null ) {
             return '';
         }
@@ -242,7 +239,7 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
 
     /** Helper: Get user birth date from user options (private "custom profile field") */
     private static function getUserPrivateBirthDate( MediaWikiServices $services, User $user ): ?string {
-        $val = $services->getUserOptionsLookup()->getOption( $user, self::OPT_BIRTHDATE, '' );
+        $val = self::getUserBirthDateOption( $services, $user );
         if ( $val === '' || $val === null ) {
             return null;
         }
@@ -251,7 +248,18 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
         return $normalized ?: null;
     }
 
-    /** Normalize stored birth date values (accepts YYYY-MM-DD or YYYY) */
+    /** Helper: resolve birth date from current or legacy option key */
+    private static function getUserBirthDateOption( MediaWikiServices $services, User $user ): ?string {
+        $lookup = $services->getUserOptionsLookup();
+        $val = $lookup->getOption( $user, self::OPT_BIRTHDATE, '' );
+        if ( $val !== '' && $val !== null ) {
+            return $val;
+        }
+
+        return $lookup->getOption( $user, self::OPT_BIRTHDATE_LEGACY, '' );
+    }
+
+    /** Normalize stored birth date values (accepts YYYY-MM-DD, YYYY, or YYYY-MM-DD HH:MM:SS) */
     private static function normalizeBirthDateValue( $value ): ?string {
         $value = trim( (string)$value );
         if ( $value === '' ) {
@@ -260,6 +268,10 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
 
         if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ) {
             return $value;
+        }
+
+        if ( preg_match( '/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/', $value ) ) {
+            return substr( $value, 0, 10 );
         }
 
         if ( preg_match( '/^\d{4}$/', $value ) ) {
@@ -327,8 +339,12 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
 
         $services = MediaWikiServices::getInstance();
         $birthDate = null;
-        if ( is_array( $alldata ) && array_key_exists( self::OPT_BIRTHDATE, $alldata ) ) {
-            $birthDate = $alldata[self::OPT_BIRTHDATE];
+        if ( is_array( $alldata ) ) {
+            if ( array_key_exists( self::OPT_BIRTHDATE, $alldata ) ) {
+                $birthDate = $alldata[self::OPT_BIRTHDATE];
+            } elseif ( array_key_exists( self::OPT_BIRTHDATE_LEGACY, $alldata ) ) {
+                $birthDate = $alldata[self::OPT_BIRTHDATE_LEGACY];
+            }
         }
 
         if ( $birthDate !== null && $birthDate !== '' ) {
@@ -342,8 +358,11 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
                     }
                 }
             }
-        } elseif ( $user instanceof User ) {
-            if ( self::isUserOldEnoughForNSFW( $services, $user, self::MIN_AGE ) ) {
+        } elseif ( $user instanceof UserIdentity ) {
+            $userObj = $user instanceof User
+                ? $user
+                : $services->getUserFactory()->newFromUserIdentity( $user );
+            if ( self::isUserOldEnoughForNSFW( $services, $userObj, self::MIN_AGE ) ) {
                 return true;
             }
         }
@@ -375,15 +394,6 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
         $mgr = $services->getUserOptionsManager();
 
         $mgr->setOption( $user, self::OPT_BIRTHDATE, '' );
-        $mgr->setOption( $user, self::OPT_UNBLUR, false );
-        $mgr->saveOptions( $user );
-    }
-
-    /** Helper: reset the unblur toggle only */
-    private static function resetNSFWBlurredOptionForUser( UserIdentity $user ): void {
-        $services = MediaWikiServices::getInstance();
-        $mgr = $services->getUserOptionsManager();
-
         $mgr->setOption( $user, self::OPT_UNBLUR, false );
         $mgr->saveOptions( $user );
     }
