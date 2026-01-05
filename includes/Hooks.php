@@ -22,7 +22,8 @@ class Hooks {
 
     private const NSFW_MARKER = '__NSFW__';
     private const OPT_UNBLUR  = 'nsfwblurred';     // toggle: show NSFW unblurred
-    private const OPT_BIRTHDATE = 'nsfw_birthyear';  // private date field (YYYY-MM-DD)
+    private const OPT_BIRTHDATE = 'nsfw_birthdate';  // private date field (YYYY-MM-DD)
+    private const OPT_BIRTHDATE_LEGACY = 'nsfw_birthyear';
     private const MIN_AGE     = 18;
 
     /** Adds JS config vars for age/gating + loads modules/styles early */
@@ -227,7 +228,7 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
 
     /** Helper: get default birth date for preference display */
     private static function getUserBirthDateDefault( MediaWikiServices $services, User $user ): string {
-        $val = $services->getUserOptionsLookup()->getOption( $user, self::OPT_BIRTHDATE, '' );
+        $val = self::getUserBirthDateOption( $services, $user );
         if ( $val === '' || $val === null ) {
             return '';
         }
@@ -238,13 +239,24 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
 
     /** Helper: Get user birth date from user options (private "custom profile field") */
     private static function getUserPrivateBirthDate( MediaWikiServices $services, User $user ): ?string {
-        $val = $services->getUserOptionsLookup()->getOption( $user, self::OPT_BIRTHDATE, '' );
+        $val = self::getUserBirthDateOption( $services, $user );
         if ( $val === '' || $val === null ) {
             return null;
         }
 
         $normalized = self::normalizeBirthDateValue( $val );
         return $normalized ?: null;
+    }
+
+    /** Helper: resolve birth date from current or legacy option key */
+    private static function getUserBirthDateOption( MediaWikiServices $services, User $user ): ?string {
+        $lookup = $services->getUserOptionsLookup();
+        $val = $lookup->getOption( $user, self::OPT_BIRTHDATE, '' );
+        if ( $val !== '' && $val !== null ) {
+            return $val;
+        }
+
+        return $lookup->getOption( $user, self::OPT_BIRTHDATE_LEGACY, '' );
     }
 
     /** Normalize stored birth date values (accepts YYYY-MM-DD, YYYY, or YYYY-MM-DD HH:MM:SS) */
@@ -327,8 +339,12 @@ public static function onOutputPageParserOutput( OutputPage $out, ParserOutput $
 
         $services = MediaWikiServices::getInstance();
         $birthDate = null;
-        if ( is_array( $alldata ) && array_key_exists( self::OPT_BIRTHDATE, $alldata ) ) {
-            $birthDate = $alldata[self::OPT_BIRTHDATE];
+        if ( is_array( $alldata ) ) {
+            if ( array_key_exists( self::OPT_BIRTHDATE, $alldata ) ) {
+                $birthDate = $alldata[self::OPT_BIRTHDATE];
+            } elseif ( array_key_exists( self::OPT_BIRTHDATE_LEGACY, $alldata ) ) {
+                $birthDate = $alldata[self::OPT_BIRTHDATE_LEGACY];
+            }
         }
 
         if ( $birthDate !== null && $birthDate !== '' ) {
