@@ -3,6 +3,9 @@ img.nsfw-blur {
   filter: blur(24px);
   transition: filter 160ms linear;
 }
+a.nsfw-blur > img {
+    filter: inherit;
+}
 
 /* Your existing body toggle can override */
 body.nsfw-unblur img.nsfw-blur {

@@ -19,7 +19,8 @@ use MediaWiki\User\UserIdentity;
 use User;
 use MediaWiki\Pager\ImageListPager;
 use MediaWiki\User\UserRigorOptions;
-
+use MediaWiki\Pager\NewFilesPager;
+use MediaWiki\SpecialPage\SpecialPage;
 class Hooks {
 
     private const NSFW_MARKER = '__NSFW__';
@@ -110,13 +111,16 @@ body.nsfw-mmv-preblur img.mw-mmv-final-image {
 }
 CSS;
     }
+    /**
+ * Inject wgNSFWFilesOnPage for file-listing special pages.
+ * Runs early enough that JS config is present when modules execute.
+ */
+    public static function onSpecialPageBeforeExecute( \SpecialPage $special, ?string $subPage ): void {
+        // Canonical special page name, normalized
+        $name = strtolower( $special->getName() );
 
-    /* ============================================================
- *  PARSER OUTPUT — AUTHORITATIVE NSFW LIST
- * ========================================================== */
-    public static function onSpecialPageAfterExecute( $special, $subPage ): void {
-        // Robust: don’t hard-depend on class names if you don’t want to.
-        if ( !method_exists( $special, 'getName' ) || $special->getName() !== 'ListFiles' ) {
+        // Support common canonical names + historical alias
+        if ( !in_array( $name, [ 'listfiles', 'newfiles', 'newimages' ], true ) ) {
             return;
         }
 
@@ -124,68 +128,274 @@ CSS;
         $services = MediaWikiServices::getInstance();
         $user = $out->getUser();
 
-        // If user can/has opted out of blur, keep list empty.
+        // Proof-of-life (optional, but useful while debugging)
+        $out->addJsConfigVars( 'wgNSFWBlurSpecialHookRan', true );
+
+        // Always ensure the JS module is available on these special pages
+        $out->addModules( [ 'ext.nsfwblur', 'ext.nsfwblur.top' ] );
+
+        // If user opted out / allowed to unblur, keep list empty and stop.
         if ( self::userWantsUnblur( $services, $user ) ) {
             $out->addJsConfigVars( 'wgNSFWFilesOnPage', [] );
             return;
         }
 
-        $request = $special->getRequest();
-        $including = method_exists( $special, 'including' ) ? (bool)$special->including() : false;
-
-        // Match core’s parameter handling for Special:ListFiles. :contentReference[oaicite:3]{index=3}
-        if ( $including ) {
-            $userName = (string)$subPage;
-            $search = '';
-            $showAll = false;
-        } else {
-            $userName = $request->getText( 'user', $subPage ?? '' );
-            $search   = $request->getText( 'ilsearch', '' );
-            $showAll  = $request->getBool( 'ilshowall', false );
-        }
-
-        // Normalize username like core does.
-        $canonical = $services->getUserNameUtils()->getCanonical( $userName, UserRigorOptions::RIGOR_NONE );
-        if ( $canonical !== false ) {
-            $userName = $canonical;
-        }
-
-        // Build the same pager core uses (SpecialListFiles -> ImageListPager). :contentReference[oaicite:4]{index=4}
-        $pager = new ImageListPager(
-            $special->getContext(),
-            $services->getCommentStore(),
-            $special->getLinkRenderer(),
-            $services->getConnectionProvider(),
-            $services->getRepoGroup(),
-            $services->getUserNameUtils(),
-            $services->getCommentFormatter(),
-            $services->getLinkBatchFactory(),
-            $userName,
-            $search,
-            $including,
-            $showAll
-        );
-
-        // Run the pager query and inspect rows.
-        // IndexPager::doQuery is public. :contentReference[oaicite:5]{index=5}
-        $pager->doQuery();
-        $res = $pager->getResult();
-
         $nsfw = [];
 
-        foreach ( $res as $row ) {
-            // ImageListPager includes img_name in its query fields. :contentReference[oaicite:6]{index=6}
-            if ( empty( $row->img_name ) ) {
-                continue;
+        /* =========================
+        * Special:ListFiles
+        * ========================= */
+        if ( $name === 'listfiles' ) {
+            $request   = $special->getRequest();
+            $including = method_exists( $special, 'including' ) ? (bool)$special->including() : false;
+
+            if ( $including ) {
+                $userName = (string)$subPage;
+                $search   = '';
+                $showAll  = false;
+            } else {
+                // ListFiles uses parameters like user / ilsearch / ilshowall
+                $userName = $request->getText( 'user', $subPage ?? '' );
+                $search   = $request->getText( 'ilsearch', '' );
+                $showAll  = $request->getBool( 'ilshowall', false );
             }
 
-            $fileTitle = Title::makeTitleSafe( NS_FILE, $row->img_name );
-            if ( !$fileTitle ) {
-                continue;
+            $canonical = $services->getUserNameUtils()->getCanonical(
+                $userName,
+                UserRigorOptions::RIGOR_NONE
+            );
+            if ( $canonical !== false ) {
+                $userName = $canonical;
             }
 
-            if ( self::isFileTitleMarkedNSFW( $fileTitle ) ) {
-                $nsfw[] = $fileTitle->getPrefixedText();
+            $pager = new ImageListPager(
+                $special->getContext(),
+                $services->getCommentStore(),
+                $special->getLinkRenderer(),
+                $services->getConnectionProvider(),
+                $services->getRepoGroup(),
+                $services->getUserNameUtils(),
+                $services->getCommentFormatter(),
+                $services->getLinkBatchFactory(),
+                $userName,
+                $search,
+                $including,
+                $showAll
+            );
+
+            $pager->doQuery();
+            $res = $pager->getResult();
+
+            foreach ( $res as $row ) {
+                if ( empty( $row->img_name ) ) {
+                    continue;
+                }
+                $fileTitle = Title::makeTitleSafe( NS_FILE, $row->img_name );
+                if ( $fileTitle && self::isFileTitleMarkedNSFW( $fileTitle ) ) {
+                    $nsfw[] = $fileTitle->getPrefixedText();
+                }
+            }
+        }
+
+        /* =========================
+        * Special:NewFiles (and old alias NewImages)
+        * ========================= */
+        if ( $name === 'newfiles' || $name === 'newimages' ) {
+            $request = $special->getRequest();
+
+            // Try core pager if available; otherwise fallback to a simple DB query.
+            if ( class_exists( NewFilesPager::class ) ) {
+                try {
+                    // Signature can vary across MW versions; keep it defensive.
+                    $pager = new NewFilesPager( $special->getContext(), $special->getLinkRenderer() );
+                    $pager->doQuery();
+                    $res = $pager->getResult();
+
+                    foreach ( $res as $row ) {
+                        $nameField = $row->img_name ?? null;
+                        if ( !$nameField ) {
+                            continue;
+                        }
+
+                        $fileTitle = Title::makeTitleSafe( NS_FILE, $nameField );
+                        if ( $fileTitle && self::isFileTitleMarkedNSFW( $fileTitle ) ) {
+                            $nsfw[] = $fileTitle->getPrefixedText();
+                        }
+                    }
+                } catch ( \Throwable $e ) {
+                    // Fall through to the manual query below.
+                }
+            }
+
+            // Fallback: query the image table directly (recent files)
+            if ( !$nsfw ) {
+                $limit = $request->getInt( 'limit', 50 );
+                $limit = max( 1, min( 500, $limit ) );
+
+                $dbr = $services->getConnectionProvider()->getReplicaDatabase();
+
+                $rows = $dbr->newSelectQueryBuilder()
+                    ->select( [ 'img_name' ] )
+                    ->from( 'image' )
+                    ->orderBy( 'img_timestamp', 'DESC' )
+                    ->limit( $limit )
+                    ->caller( __METHOD__ )
+                    ->fetchResultSet();
+
+                foreach ( $rows as $row ) {
+                    if ( empty( $row->img_name ) ) {
+                        continue;
+                    }
+                    $fileTitle = Title::makeTitleSafe( NS_FILE, $row->img_name );
+                    if ( $fileTitle && self::isFileTitleMarkedNSFW( $fileTitle ) ) {
+                        $nsfw[] = $fileTitle->getPrefixedText();
+                    }
+                }
+            }
+        }
+
+        $nsfw = array_values( array_unique( $nsfw ) );
+        sort( $nsfw );
+
+        // CRITICAL: Always set on these special pages (no isContentPage() check)
+        $out->addJsConfigVars( 'wgNSFWFilesOnPage', $nsfw );
+    }
+
+
+    /* ============================================================
+ *  PARSER OUTPUT — AUTHORITATIVE NSFW LIST
+ * ========================================================== */
+    public static function onSpecialPageAfterExecute( SpecialPage $special, $subPage ): void {
+        if ( !method_exists( $special, 'getName' ) ) {
+            return;
+        }
+
+        $name = $special->getName();
+
+        // Only special pages that actually list files.
+        $supported = [ 'ListFiles', 'NewFiles' ];
+        error_log('NSFWBlur: SpecialPageAfterExecute fired for ' . $special->getName());
+        if ( !in_array( $name, $supported, true ) ) {
+            return;
+        }
+
+        $out = $special->getOutput();
+        $services = MediaWikiServices::getInstance();
+        $user = $out->getUser();
+       
+
+        // If user can/has opted out of blur, keep list empty.
+        $nsfw = array_values( array_unique( $nsfw ) );
+        sort( $nsfw );
+
+        // Always set it on these Special pages
+        $out->addJsConfigVars( 'wgNSFWFilesOnPage', $nsfw );
+
+        $out->addJsConfigVars( 'wgNSFWBlurSpecialHookRan', true );
+        $nsfw = [];
+
+        if ( $name === 'ListFiles' ) {
+            // --- Your existing Special:ListFiles logic (kept essentially the same) ---
+            $request   = $special->getRequest();
+            $including = method_exists( $special, 'including' ) ? (bool)$special->including() : false;
+
+            if ( $including ) {
+                $userName = (string)$subPage;
+                $search   = '';
+                $showAll  = false;
+            } else {
+                $userName = $request->getText( 'user', $subPage ?? '' );
+                $search   = $request->getText( 'ilsearch', '' );
+                $showAll  = $request->getBool( 'ilshowall', false );
+            }
+
+            $canonical = $services->getUserNameUtils()->getCanonical( $userName, UserRigorOptions::RIGOR_NONE );
+            if ( $canonical !== false ) {
+                $userName = $canonical;
+            }
+
+            $pager = new ImageListPager(
+                $special->getContext(),
+                $services->getCommentStore(),
+                $special->getLinkRenderer(),
+                $services->getConnectionProvider(),
+                $services->getRepoGroup(),
+                $services->getUserNameUtils(),
+                $services->getCommentFormatter(),
+                $services->getLinkBatchFactory(),
+                $userName,
+                $search,
+                $including,
+                $showAll
+            );
+
+            $pager->doQuery();
+            $res = $pager->getResult();
+
+            foreach ( $res as $row ) {
+                if ( empty( $row->img_name ) ) {
+                    continue;
+                }
+                $fileTitle = Title::makeTitleSafe( NS_FILE, $row->img_name );
+                if ( $fileTitle && self::isFileTitleMarkedNSFW( $fileTitle ) ) {
+                    $nsfw[] = $fileTitle->getPrefixedText();
+                }
+            }
+        }
+
+        if ( $name === 'NewFiles' ) {
+            $request = $special->getRequest();
+
+            // Try to use core pager if available; otherwise fallback to a simple DB query.
+            if ( class_exists( NewFilesPager::class ) ) {
+                // NewFilesPager signature varies a bit across MW versions, so we keep it defensive.
+                try {
+                    // Many MW versions accept (IContextSource $context, LinkRenderer $linkRenderer)
+                    $pager = new NewFilesPager( $special->getContext(), $special->getLinkRenderer() );
+                    $pager->doQuery();
+                    $res = $pager->getResult();
+
+                    foreach ( $res as $row ) {
+                        // Common field name is img_name (from image table).
+                        $nameField = $row->img_name ?? null;
+                        if ( !$nameField ) {
+                            continue;
+                        }
+
+                        $fileTitle = Title::makeTitleSafe( NS_FILE, $nameField );
+                        if ( $fileTitle && self::isFileTitleMarkedNSFW( $fileTitle ) ) {
+                            $nsfw[] = $fileTitle->getPrefixedText();
+                        }
+                    }
+                } catch ( \Throwable $e ) {
+                    // Fall through to the manual query below if the pager signature doesn't match.
+                }
+            }
+
+            // Fallback: query the image table directly (recent files)
+            if ( !$nsfw ) {
+                $limit = $request->getInt( 'limit', 50 );
+                $limit = max( 1, min( 500, $limit ) );
+
+                $dbr = $services->getConnectionProvider()->getReplicaDatabase();
+
+                $rows = $dbr->newSelectQueryBuilder()
+                    ->select( [ 'img_name' ] )
+                    ->from( 'image' )
+                    ->orderBy( 'img_timestamp', 'DESC' )
+                    ->limit( $limit )
+                    ->caller( __METHOD__ )
+                    ->fetchResultSet();
+
+                foreach ( $rows as $row ) {
+                    if ( empty( $row->img_name ) ) {
+                        continue;
+                    }
+                    $fileTitle = Title::makeTitleSafe( NS_FILE, $row->img_name );
+                    if ( $fileTitle && self::isFileTitleMarkedNSFW( $fileTitle ) ) {
+                        $nsfw[] = $fileTitle->getPrefixedText();
+                    }
+                }
             }
         }
 
@@ -194,6 +404,7 @@ CSS;
 
         $out->addJsConfigVars( 'wgNSFWFilesOnPage', $nsfw );
     }
+
 
     public static function onOutputPageParserOutput(
         OutputPage $out,
@@ -232,9 +443,6 @@ CSS;
 
         $parserOutput->addJsConfigVars( 'wgNSFWFilesOnPage', $nsfw );
     }
-
-
-
 
     /* ============================================================
      *  PREFERENCES
@@ -481,4 +689,5 @@ CSS;
 
         return wfMessage( 'nsfwblur-pref-nsfw-age' )->text();
     }
+    
 }

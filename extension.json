@@ -1,6 +1,6 @@
 {
     "name": "NSFW Filter",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "author": "OnikaGPT 4o, Christian Daniel Jensen, ChatGPT-5.2",
     "url": "https://www.mediawiki.org/wiki/Extension:NSFW_Filter",
     "descriptionmsg": "nsfwblur-desc",
@@ -58,6 +58,7 @@
     },
     "Hooks": {
         "BeforePageDisplay": "NSFWBlur\\Hooks::onBeforePageDisplay",
+        "SpecialPageBeforeExecute": "NSFWBlur\\Hooks::onSpecialPageBeforeExecute",
         "OutputPageParserOutputComplete": "NSFWBlur\\Hooks::onOutputPageParserOutput",
         "ImageBeforeProduceHTML": "NSFWBlur\\Hooks::onImageBeforeProduceHTML",
         "GetPreferences": "NSFWBlur\\Hooks::onGetPreferences",
