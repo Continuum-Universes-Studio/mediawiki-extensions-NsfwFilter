@@ -1,13 +1,13 @@
 {
   "name": "NSFW Filter",
-  "version": "2.1.0",
+  "version": "2.3.0",
   "author": "OnikaGPT 4o, Christian Daniel Jensen, ChatGPT-5.2",
   "url": "https://www.mediawiki.org/wiki/Extension:NSFW_Filter",
   "descriptionmsg": "nsfwblur-desc",
   "type": "other",
   "manifest_version": 2,
   "requires": {
-    "MediaWiki": ">= 1.43.0"
+    "MediaWiki": ">= 1.45.0"
   },
   "AutoloadClasses": {
     "NSFWBlur\\Hooks": "includes/Hooks.php"

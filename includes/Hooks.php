@@ -690,7 +690,6 @@ class Hooks {
     private static function isFileTitleMarkedNSFW( Title $fileTitle ): bool {
         static $memo = [];
 
-        // Only File: pages make sense here
         if ( !$fileTitle->inNamespace( NS_FILE ) ) {
             return false;
         }
@@ -702,40 +701,53 @@ class Hooks {
 
         $services = MediaWikiServices::getInstance();
 
-        // 1) Marker in wikitext
-        $revision = $services->getRevisionLookup()->getRevisionByTitle( $fileTitle );
-        if ( $revision ) {
-            $content = $revision->getContent( SlotRecord::MAIN, RevisionRecord::FOR_PUBLIC );
-            if ( $content ) {
-                $text = ( $content instanceof \TextContent ) 
-                    ? $content->getText() 
-                    : \ContentHandler::getContentText( $content );
-                if ( $text && strpos( $text, self::NSFW_MARKER ) !== false ) {
-                    return $memo[$cacheKey] = true;
+        // 1) Marker in wikitext (still fine, but make it model-safe)
+        try {
+            $rev = $services->getRevisionLookup()->getRevisionByTitle( $fileTitle );
+            if ( $rev ) {
+                $content = $rev->getContent( SlotRecord::MAIN, RevisionRecord::FOR_PUBLIC );
+                if ( $content ) {
+                    $handler = $services->getContentHandlerFactory()
+                        ->getContentHandler( $content->getModel() );
+
+                    $text = $handler->serializeContent( $content );
+                    if ( is_string( $text ) && strpos( $text, self::NSFW_MARKER ) !== false ) {
+                        return $memo[$cacheKey] = true;
+                    }
                 }
             }
+        } catch ( \Throwable $e ) {
+            // Never break rendering because a parser/text read failed
         }
 
-        // 2) Category:NSFW membership (fast + reliable)
+        // 2) Category:NSFW membership (MW 1.45 schema: categorylinks + linktarget)
         $pageId = $fileTitle->getArticleID();
         if ( !$pageId ) {
             return $memo[$cacheKey] = false;
         }
 
-        $dbr = $services->getConnectionProvider()->getReplicaDatabase();
-        $row = $dbr->newSelectQueryBuilder()
-            ->select( [ 'cl_to' ] )
-            ->from( 'categorylinks' )
-            ->where( [
-                'cl_from' => $pageId,
-                'cl_to'   => self::NSFW_CATEGORY_DBKEY, // "NSFW"
-            ] )
-            ->limit( 1 )
-            ->caller( __METHOD__ )
-            ->fetchRow();
+        try {
+            $dbr = $services->getConnectionProvider()->getReplicaDatabase();
 
-        return $memo[$cacheKey] = (bool)$row;
+            $row = $dbr->newSelectQueryBuilder()
+                ->select( [ 'cl_from' ] )
+                ->from( 'categorylinks' )
+                ->join( 'linktarget', 'lt', 'lt.lt_id = cl_target_id' )
+                ->where( [
+                    'cl_from'      => (int)$pageId,
+                    'lt.lt_namespace' => NS_CATEGORY,
+                    'lt.lt_title'     => self::NSFW_CATEGORY_DBKEY, // DB key: "NSFW"
+                ] )
+                ->limit( 1 )
+                ->caller( __METHOD__ )
+                ->fetchRow();
+
+            return $memo[$cacheKey] = (bool)$row;
+        } catch ( \Throwable $e ) {
+            return $memo[$cacheKey] = false;
+        }
     }
+
 
 
     private static function applyFilePageBlurClass( OutputPage $out, bool $userWantsUnblur ): void {
