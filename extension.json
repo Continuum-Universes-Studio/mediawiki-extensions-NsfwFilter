@@ -1,70 +1,79 @@
 {
-    "name": "NSFW Filter",
-    "version": "2.1.0",
-    "author": "OnikaGPT 4o, Christian Daniel Jensen, ChatGPT-5.2",
-    "url": "https://www.mediawiki.org/wiki/Extension:NSFW_Filter",
-    "descriptionmsg": "nsfwblur-desc",
-    "type": "Hooks",
-    "manifest_version": 2,
-    "requires": {
-        "MediaWiki": ">= 1.43.0"
+  "name": "NSFW Filter",
+  "version": "2.1.0",
+  "author": "OnikaGPT 4o, Christian Daniel Jensen, ChatGPT-5.2",
+  "url": "https://www.mediawiki.org/wiki/Extension:NSFW_Filter",
+  "descriptionmsg": "nsfwblur-desc",
+  "type": "other",
+  "manifest_version": 2,
+  "requires": {
+    "MediaWiki": ">= 1.43.0"
+  },
+  "AutoloadClasses": {
+    "NSFWBlur\\Hooks": "includes/Hooks.php"
+  },
+  "MessagesDirs": {
+    "NSFWBlur": [
+      "i18n"
+    ]
+  },
+  "DefaultUserOptions": {
+    "nsfwblurred": 0
+  },
+  "ResourceModules": {
+    "ext.nsfwblur.top": {
+        "localBasePath": ".",
+        "remoteExtPath": "NsfwFilter",
+        "position": "top",
+        "dependencies": [
+        "mediawiki.util",
+        "mediawiki.Uri",
+        "mediawiki.Title"
+        ],
+        "scripts": [
+        "modules/nsfw-blur.top.js"
+        ],
+        "targets": [ "desktop", "mobile" ]
     },
-    "AutoloadClasses": {
-        "NSFWBlur\\Hooks": "includes/Hooks.php"
+    "ext.nsfwblur": {
+        "localBasePath": ".",
+        "remoteExtPath": "NsfwFilter",
+        "dependencies": [
+        "user.options",
+        "mediawiki.util",
+        "mediawiki.Uri",
+        "mediawiki.Title"
+        ],
+        "scripts": [
+        "modules/nsfw-blur.js"
+        ],
+        "targets": [ "desktop", "mobile" ]
     },
-    "ResourceModules": {
-        "ext.nsfwblur.top": {
-            "localBasePath": ".",
-            "remoteExtPath": "NsfwFilter",
-            "position": "top",
-            "dependencies": [
-            "mediawiki.util",
-            "mediawiki.Uri",
-            "mediawiki.Title"
-            ],
-            "scripts": [
-                "modules/nsfw-blur.top.js"
-            ],
-            "targets": [
-            "desktop",
-            "mobile"
-            ]
-        },
-        "ext.nsfwblur": {
-            "localBasePath": ".",
-            "remoteExtPath": "NsfwFilter",
-            "dependencies": [
-            "user.options"
-            ],
-            "styles": [
-                "modules/nsfw-blur.css"
-            ],
-            "scripts": [
-                "modules/nsfw-blur.js"
-            ],
-            "targets": [
-            "desktop",
-            "mobile"
-            ]
-        }
-    },
-    "MessagesDirs": {
-        "NSFWBlur": [
-            "i18n"
-        ]
-    },
-    "DefaultUserOptions": {
-          "nsfwblurred": 0
+    "ext.nsfwblur.styles": {
+        "localBasePath": ".",
+        "remoteExtPath": "NsfwFilter",
+        "styles": [
+        "modules/nsfw-blur.css"
+        ],
+        "targets": [ "desktop", "mobile" ]
+    }
     },
     "Hooks": {
         "BeforePageDisplay": "NSFWBlur\\Hooks::onBeforePageDisplay",
+        "ThumbnailBeforeProduceHTML": "NSFWBlur\\Hooks::onThumbnailBeforeProduceHTML",
+        "OutputPageParserOutput": "NSFWBlur\\Hooks::onOutputPageParserOutput",
+        "OutputPageParserOutputComplete": "NSFWBlur\\Hooks::onOutputPageParserOutputComplete",
+
+        "ParserOutput": "NSFWBlur\\Hooks::onParserOutput",
+
         "SpecialPageBeforeExecute": "NSFWBlur\\Hooks::onSpecialPageBeforeExecute",
-        "OutputPageParserOutputComplete": "NSFWBlur\\Hooks::onOutputPageParserOutput",
+
         "ImageBeforeProduceHTML": "NSFWBlur\\Hooks::onImageBeforeProduceHTML",
         "GetPreferences": "NSFWBlur\\Hooks::onGetPreferences",
+
         "PageRenderingHash": "NSFWBlur\\Hooks::onPageRenderingHash",
         "UserGetDefaultOptions": "NSFWBlur\\Hooks::onUserGetDefaultOptions",
-        "UserSaveOptions": "NSFWBlur\\Hooks::onUserSaveOptions",
-        "SpecialPageAfterExecute": "NSFWBlur\\Hooks::onSpecialPageAfterExecute"
-    }
+        "UserSaveOptions": "NSFWBlur\\Hooks::onUserSaveOptions"        
+   }
+        
 }
