@@ -11,4 +11,4 @@ Blurs images marked as NSFW in their file description, based on user preference.
 1. Clone this repo into your MediaWiki `extensions/` directory.
 2. Add to your `LocalSettings.php`:
    ```php
-   wfLoadExtension( 'NSFWFilter' );
+   wfLoadExtension( 'NsfwFilter' );
