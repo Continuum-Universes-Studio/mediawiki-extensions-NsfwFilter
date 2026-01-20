@@ -246,7 +246,10 @@ class Hooks {
      *  PARSER OUTPUT (OPTIONAL CACHE/DEBUG) — SAFE SIGNATURE
      *  Hook: ParserOutput
      * ========================================================== */
-    public static function onThumbnailBeforeProduceHTML( $thumbnail, array &$attribs, array &$linkAttribs, ...$more ): void {
+    public static function onThumbnailBeforeProduceHTML( $thumbnail, array &$attribs, &$linkAttribs, ...$more ): void {
+        if ( !is_array( $linkAttribs ) ) {
+            $linkAttribs = [];
+        }
         // Honor the user's preference, even though this hook doesn't receive $user.
         $services = MediaWikiServices::getInstance();
         $user = RequestContext::getMain()->getUser();
