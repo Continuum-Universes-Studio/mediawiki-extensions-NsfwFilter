@@ -446,12 +446,12 @@ class Hooks {
                 $services->getConnectionProvider(),
                 $services->getRepoGroup(),
                 $services->getUserNameUtils(),
-                $services->getCommentFormatter(),
+                $services->getRowCommentFormatter(),
                 $services->getLinkBatchFactory(),
                 $userName,
-                $services->getContentLanguage(),
-                $services->getUserOptionsLookup(),
-                $services->getRepoGroup()
+                $search,
+                $including,
+                $showAll
             );
 
             $pager->doQuery();
