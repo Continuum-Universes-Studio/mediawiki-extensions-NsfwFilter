@@ -279,11 +279,16 @@ class Hooks {
         $linkAttribs['class'] = trim( ( $linkAttribs['class'] ?? '' ) . ' nsfw-blur' );
     }
     public static function onParserOutput( Parser $parser, ParserOutput $po, ...$args ): bool {
+        $html = $po->getText();
+        if ( is_string( $html ) && strpos( $html, self::NSFW_MARKER ) !== false ) {
+            $po->setText( str_replace( self::NSFW_MARKER, '', $html ) );
+            $html = $po->getText();
+        }
+
         // Debug/inspection only; not relied on for the final blur list.
         $images = $po->getImages();
         $dbKeys = is_array( $images ) ? array_keys( $images ) : [];
 
-        $html = $po->getText();
         if ( is_string( $html ) && $html !== '' ) {
             $dbKeys = array_merge( $dbKeys, self::extractImageDbKeysFromHtml( $html ) );
         }
