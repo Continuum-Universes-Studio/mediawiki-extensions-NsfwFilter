@@ -46,6 +46,29 @@ body.nsfw-filepage-blur .mw-file-element {
     filter: blur(24px) !important;
 }
 
+body.nsfw-page-restricted .nsfw-page-restriction {
+    margin: 1.5rem auto;
+    max-width: 48rem;
+}
+
+body.nsfw-page-restricted .nsfw-page-restriction__title {
+    margin: 0 0 0.75rem;
+}
+
+body.nsfw-page-restricted .nsfw-page-restriction__body,
+body.nsfw-page-restricted .nsfw-page-restriction__actions,
+body.nsfw-page-restricted .nsfw-page-restriction__tip {
+    margin: 0 0 0.75rem;
+}
+
+body.nsfw-page-restricted .nsfw-page-restriction__actions {
+    font-weight: 600;
+}
+
+body.nsfw-page-restricted .nsfw-page-restriction__link {
+    font-weight: 600;
+}
+
 /* MediaViewer */
 body.nsfw-mmv-preblur .mw-mmv-image img,
 body.nsfw-mmv-preblur img.mw-mmv-final-image {

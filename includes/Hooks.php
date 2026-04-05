@@ -7,6 +7,7 @@ if ( !defined( 'MEDIAWIKI' ) ) {
 
 use MediaWiki\Context\RequestContext;
 use MediaWiki\Html\FormOptions;
+use MediaWiki\Html\Html;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Pager\ImageListPager;
 use MediaWiki\Pager\NewFilesPager;
@@ -25,6 +26,7 @@ use User;
 class Hooks {
     private const NSFW_MARKER = '__NSFW__';
     private const NSFW_CATEGORY_DBKEY = 'NSFW'; // Category:NSFW
+    private const UNBLUR_RIGHT = 'nsfw-unblur';
 
     private const OPT_UNBLUR           = 'nsfwblurred';
     private const OPT_BIRTHDATE        = 'nsfw_birthdate';
@@ -92,6 +94,11 @@ class Hooks {
             $out->addJsConfigVars( [
                 'wgNSFWFilesOnPage' => $merged,
             ] );
+
+            if ( self::shouldRestrictPageContent( $services, $out ) ) {
+                $out->addBodyClasses( 'nsfw-page-restricted' );
+                $out->addJsConfigVars( [ 'wgNSFWPage' => true ] );
+            }
         }
 
         $out->addInlineStyle( self::getEarlyInlineCss() );
@@ -119,6 +126,76 @@ class Hooks {
             return is_string( $maybe ) ? $maybe : '';
         }
         return '';
+    }
+
+    private static function shouldRestrictPageContent( MediaWikiServices $services, OutputPage $out ): bool {
+        $title = $out->getTitle();
+        if ( !$title || !$title->isContentPage() ) {
+            return false;
+        }
+
+        $action = $out->getRequest()->getVal( 'action', 'view' );
+        if ( $action !== 'view' ) {
+            return false;
+        }
+
+        return !self::userWantsUnblur( $services, $out->getUser() )
+            && self::isContentTitleMarkedNSFW( $title );
+    }
+
+    public static function onOutputPageBeforeHTML( OutputPage $out, &$text ): void {
+        $services = MediaWikiServices::getInstance();
+        if ( !self::shouldRestrictPageContent( $services, $out ) ) {
+            return;
+        }
+
+        $text = self::buildRestrictedPageHtml( $out );
+    }
+
+    private static function buildRestrictedPageHtml( OutputPage $out ): string {
+        $content = Html::element(
+            'h2',
+            [ 'class' => 'nsfw-page-restriction__title' ],
+            wfMessage( 'nsfwblur-page-restricted-title' )->text()
+        );
+
+        $content .= Html::element(
+            'p',
+            [ 'class' => 'nsfw-page-restriction__body' ],
+            wfMessage( 'nsfwblur-page-restricted-body' )->text()
+        );
+
+        if ( $out->getUser()->isRegistered() ) {
+            $content .= Html::rawElement(
+                'p',
+                [ 'class' => 'nsfw-page-restriction__actions' ],
+                Html::element(
+                    'a',
+                    [
+                        'class' => 'nsfw-page-restriction__link',
+                        'href' => SpecialPage::getTitleFor( 'Preferences' )->getLocalURL( [
+                            'mw-prefsection' => 'rendering/files'
+                        ] )
+                    ],
+                    wfMessage( 'nsfwblur-page-restricted-settings' )->text()
+                )
+            );
+
+            $content .= Html::element(
+                'p',
+                [ 'class' => 'nsfw-page-restriction__tip' ],
+                wfMessage( 'nsfwblur-toggle-tip' )->text()
+            );
+        }
+
+        return Html::rawElement(
+            'div',
+            [
+                'class' => 'mw-message-box mw-message-box-warning nsfw-page-restriction',
+                'role' => 'note'
+            ],
+            $content
+        );
     }
 
 
@@ -537,7 +614,7 @@ class Hooks {
     public static function onGetPreferences( $user, &$preferences ): bool {
         $services = MediaWikiServices::getInstance();
 
-        $canSeeNSFW        = self::isUserOldEnoughForNSFW( $services, $user );
+        $canSeeNSFW        = self::isUserAllowedToUnblur( $services, $user );
         $defaultBirthdate  = self::getUserBirthDateDefault( $services, $user );
 
         $preferences[self::OPT_BIRTHDATE] = [
@@ -556,7 +633,7 @@ class Hooks {
             'label-message' => 'tog-nsfwblurred',
             'section'       => 'rendering/files',
             'disabled'      => !$canSeeNSFW,
-            'help-message'  => !$canSeeNSFW ? 'nsfwblur-pref-nsfw-age' : null,
+            'help-message'  => !$canSeeNSFW ? 'nsfwblur-pref-nsfw-access' : null,
             'validation-callback' => [ self::class, 'validateNsfwUnblurPreference' ],
         ];
 
@@ -633,7 +710,7 @@ class Hooks {
     public static function onUserSaveOptions( $user, &$options ): void {
         if ( $user instanceof User ) {
             $services = MediaWikiServices::getInstance();
-            if ( !self::isUserOldEnoughForNSFW( $services, $user ) ) {
+            if ( !self::isUserAllowedToUnblur( $services, $user ) ) {
                 $options[self::OPT_UNBLUR] = 0;
             }
         }
@@ -655,12 +732,22 @@ class Hooks {
     }
 
     private static function normalizeBirthDateValue( string $value ): ?string {
+        $value = trim( $value );
+
         if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $value ) ) {
             return $value;
         }
         if ( preg_match( '/^\d{4}$/', $value ) ) {
             return $value . '-01-01';
         }
+
+        foreach ( [ 'm-d-Y', 'm/d/Y', 'n-j-Y', 'n/j/Y', 'Y/m/d' ] as $format ) {
+            $date = \DateTimeImmutable::createFromFormat( '!' . $format, $value );
+            if ( $date && $date->format( $format ) === $value ) {
+                return $date->format( 'Y-m-d' );
+            }
+        }
+
         return null;
     }
 
@@ -681,8 +768,19 @@ class Hooks {
         return ( time() - $birth ) >= ( self::MIN_AGE * 31557600 );
     }
 
+    private static function userHasUnblurRight( User $user ): bool {
+        return $user->isAllowed( self::UNBLUR_RIGHT );
+    }
+
+    private static function isUserAllowedToUnblur( MediaWikiServices $services, User $user ): bool {
+        return $user->isRegistered()
+            && self::userHasUnblurRight( $user )
+            && self::isUserOldEnoughForNSFW( $services, $user );
+    }
+
     private static function userWantsUnblur( MediaWikiServices $services, User $user ): bool {
         return $user->isRegistered()
+            && self::isUserAllowedToUnblur( $services, $user )
             && (bool)$services->getUserOptionsLookup()->getOption( $user, self::OPT_UNBLUR );
     }
 
@@ -753,6 +851,45 @@ class Hooks {
 
 
 
+    private static function isContentTitleMarkedNSFW( Title $title ): bool {
+        static $memo = [];
+
+        if ( !$title ) {
+            return false;
+        }
+
+        $cacheKey = $title->getPrefixedDBkey();
+        if ( array_key_exists( $cacheKey, $memo ) ) {
+            return $memo[$cacheKey];
+        }
+
+        $services = MediaWikiServices::getInstance();
+        $pageId = $title->getArticleID();
+        if ( !$pageId ) {
+            return $memo[$cacheKey] = false;
+        }
+
+        try {
+            $dbr = $services->getConnectionProvider()->getReplicaDatabase();
+            $row = $dbr->newSelectQueryBuilder()
+                ->select( [ 'cl_from' ] )
+                ->from( 'categorylinks' )
+                ->join( 'linktarget', 'lt', 'lt.lt_id = cl_target_id' )
+                ->where( [
+                    'cl_from' => (int)$pageId,
+                    'lt.lt_namespace' => NS_CATEGORY,
+                    'lt.lt_title' => self::NSFW_CATEGORY_DBKEY,
+                ] )
+                ->limit( 1 )
+                ->caller( __METHOD__ )
+                ->fetchRow();
+
+            return $memo[$cacheKey] = (bool)$row;
+        } catch ( \Throwable $e ) {
+            return $memo[$cacheKey] = false;
+        }
+    }
+
     private static function applyFilePageBlurClass( OutputPage $out, bool $userWantsUnblur ): void {
         $title = $out->getTitle();
         if ( !$title || !$title->inNamespace( NS_FILE ) ) {
@@ -783,19 +920,21 @@ class Hooks {
             : wfMessage( 'nsfwblur-birthdate-invalid' )->text();
     }
 
-    public static function validateNsfwUnblurPreference( $value, $alldata = null, $user = null ): bool|string {
+    public static function validateNsfwUnblurPreference( $value, $alldata = null, $form = null ): bool|string {
         if ( !$value ) {
             return true;
         }
 
+        $user = ( is_object( $form ) && method_exists( $form, 'getUser' ) ) ? $form->getUser() : null;
+
         if ( $user instanceof User ) {
             $services = MediaWikiServices::getInstance();
-            if ( self::isUserOldEnoughForNSFW( $services, $user ) ) {
+            if ( self::isUserAllowedToUnblur( $services, $user ) ) {
                 return true;
             }
         }
 
-        return wfMessage( 'nsfwblur-pref-nsfw-age' )->text();
+        return wfMessage( 'nsfwblur-pref-nsfw-access' )->text();
     }
 
     /* ============================================================
@@ -815,6 +954,21 @@ body.nsfw-filepage-blur #file .mw-file-element,
 body.nsfw-filepage-blur .fullImageLink img,
 body.nsfw-filepage-blur .mw-filepage-other-resolutions img {
     filter: blur(24px) !important;
+}
+
+body.nsfw-page-restricted .nsfw-page-restriction {
+    margin: 1.5rem auto;
+    max-width: 48rem;
+}
+
+body.nsfw-page-restricted .nsfw-page-restriction__title {
+    margin: 0 0 0.75rem;
+}
+
+body.nsfw-page-restricted .nsfw-page-restriction__body,
+body.nsfw-page-restricted .nsfw-page-restriction__actions,
+body.nsfw-page-restricted .nsfw-page-restriction__tip {
+    margin: 0 0 0.75rem;
 }
 
 body.nsfw-mmv-preblur .mw-mmv-image img,

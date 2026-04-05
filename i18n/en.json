@@ -7,8 +7,12 @@
     "nsfwblur-pref-dob": "Date of birth (required for NSFW content)",
     "tog-nsfwblurred": "Display filtered images",
     "nsfwblur-pref-nsfw-age": "You must be at least 18 years old (based on your profile) to change this setting.",
+    "nsfwblur-pref-nsfw-access": "You must have the nsfw-unblur permission and be at least 18 years old to change this setting.",
     "nsfwblur-birthdate-label": "Birth date (used for NSFW gating)",
     "nsfwblur-birthdate-help": "Stored privately in your account preferences and only used to decide whether NSFW images may be unblurred.",
-    "nsfwblur-birthdate-invalid": "Please enter a valid date."
+    "nsfwblur-birthdate-invalid": "Please enter a valid date.",
+    "nsfwblur-page-restricted-title": "Restricted content",
+    "nsfwblur-page-restricted-body": "This article contains NSFW material and is hidden by default.",
+    "nsfwblur-page-restricted-settings": "Review NSFW settings"
 
 }
