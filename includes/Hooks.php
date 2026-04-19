@@ -30,14 +30,24 @@ class Hooks {
     private const NSFW_MARKER = '__NSFW__';
     private const NSFW_CATEGORY_DBKEY = 'NSFW'; // Category:NSFW
     private const NSFW_FILE_CATEGORY_DBKEY = 'NSFW_Files'; // Category:NSFW_Files
+    private const NSFW_GORE_CATEGORY_DBKEY = 'NSFW_Gore'; // Category:NSFW Gore
+    private const NSFW_SEXUAL_CATEGORY_DBKEY = 'NSFW_Sexual'; // Category:NSFW Sexual
+    private const NSFW_PROSE_CATEGORY_DBKEY = 'NSFW_Prose'; // Category:NSFW Prose
     private const UNBLUR_RIGHT = 'nsfw-unblur';
     private const PLACEHOLDER_CONFIG = 'NsfwFilterPlaceholderImage';
     private const NSFW_ROBOTS_TAG = 'noindex, noimageindex, noarchive';
     private const PROXY_ENTRY_POINT = 'nsfwProxy.php';
 
     private const OPT_UNBLUR           = 'nsfwblurred';
+    private const OPT_UNBLUR_GORE      = 'nsfwblurred_gore';
+    private const OPT_UNBLUR_SEXUAL    = 'nsfwblurred_sexual';
+    private const OPT_UNBLUR_PROSE     = 'nsfwblurred_prose';
     private const OPT_BIRTHDATE        = 'nsfw_birthdate';
     private const OPT_BIRTHDATE_LEGACY = 'nsfw_birthyear';
+
+    private const PREF_GORE = 'gore';
+    private const PREF_SEXUAL = 'sexual';
+    private const PREF_PROSE = 'prose';
 
     private const MIN_AGE = 18;
 
@@ -265,8 +275,9 @@ JS;
             return false;
         }
 
-        return !self::userWantsUnblur( $services, $out->getUser() )
-            && self::isContentTitleMarkedNSFW( $title );
+        $requirements = self::getContentTitleVisibilityRequirements( $title );
+        return self::hasAnyNsfwRequirements( $requirements )
+            && !self::userMeetsNsfwRequirements( $services, $out->getUser(), $requirements );
     }
 
     public static function onOutputPageBeforeHTML( OutputPage $out, &$text ): void {
@@ -594,6 +605,7 @@ JS;
 
         $services = MediaWikiServices::getInstance();
         $placeholderUrl = self::resolvePlaceholderUrl( $services );
+        $currentUser = RequestContext::getMain()->getUser();
 
         foreach ( $thumbnails as $pageId => $thumbnail ) {
             if ( !$thumbnail instanceof \MediaWiki\Search\Entity\SearchResultThumbnail ) {
@@ -604,7 +616,15 @@ JS;
                 ? Title::newFromPageIdentity( $pageIdentities[$pageId] )
                 : null;
 
-            $pageIsNsfw = $pageTitle ? self::isContentTitleMarkedNSFW( $pageTitle ) : false;
+            $pageIsNsfw = false;
+            if ( $placeholderUrl && $pageTitle instanceof Title ) {
+                $pageRequirements = self::getContentTitleVisibilityRequirements( $pageTitle );
+                $pageIsNsfw = self::hasAnyNsfwRequirements( $pageRequirements )
+                    && (
+                        !( $currentUser instanceof User )
+                        || !self::userMeetsNsfwRequirements( $services, $currentUser, $pageRequirements )
+                    );
+            }
 
             if ( $pageIsNsfw && $placeholderUrl ) {
                 $thumbnails[$pageId] = new \MediaWiki\Search\Entity\SearchResultThumbnail(
@@ -665,10 +685,31 @@ JS;
             'validation-callback' => [ self::class, 'validateBirthDatePreference' ],
         ];
 
-        $preferences[self::OPT_UNBLUR] = [
+        $preferences[self::OPT_UNBLUR_GORE] = [
             'type'          => 'toggle',
-            'label-message' => 'tog-nsfwblurred',
+            'label-message' => 'tog-nsfwblurred-gore',
             'section'       => 'rendering/files',
+            'default'       => self::getEffectiveUserCategoryPreference( $services, $user, self::PREF_GORE ),
+            'disabled'      => !$canSeeNSFW,
+            'help-message'  => !$canSeeNSFW ? 'nsfwblur-pref-nsfw-access' : null,
+            'validation-callback' => [ self::class, 'validateNsfwUnblurPreference' ],
+        ];
+
+        $preferences[self::OPT_UNBLUR_SEXUAL] = [
+            'type'          => 'toggle',
+            'label-message' => 'tog-nsfwblurred-sexual',
+            'section'       => 'rendering/files',
+            'default'       => self::getEffectiveUserCategoryPreference( $services, $user, self::PREF_SEXUAL ),
+            'disabled'      => !$canSeeNSFW,
+            'help-message'  => !$canSeeNSFW ? 'nsfwblur-pref-nsfw-access' : null,
+            'validation-callback' => [ self::class, 'validateNsfwUnblurPreference' ],
+        ];
+
+        $preferences[self::OPT_UNBLUR_PROSE] = [
+            'type'          => 'toggle',
+            'label-message' => 'tog-nsfwblurred-prose',
+            'section'       => 'rendering/files',
+            'default'       => self::getEffectiveUserCategoryPreference( $services, $user, self::PREF_PROSE ),
             'disabled'      => !$canSeeNSFW,
             'help-message'  => !$canSeeNSFW ? 'nsfwblur-pref-nsfw-access' : null,
             'validation-callback' => [ self::class, 'validateNsfwUnblurPreference' ],
@@ -912,8 +953,10 @@ JS;
         try {
             $services = MediaWikiServices::getInstance();
             if ( $user instanceof User ) {
-                $unblur = self::userWantsUnblur( $services, $user ) ? '1' : '0';
-                $confstr .= "!nsfw:$unblur";
+                $prefs = self::getEffectiveUserNsfwPreferences( $services, $user );
+                $confstr .= '!nsfw:g' . (int)$prefs[self::PREF_GORE]
+                    . 's' . (int)$prefs[self::PREF_SEXUAL]
+                    . 'p' . (int)$prefs[self::PREF_PROSE];
             }
         } catch ( \Throwable $e ) {
             // ignore
@@ -929,7 +972,28 @@ JS;
             $services = MediaWikiServices::getInstance();
             if ( !self::isUserAllowedToUnblur( $services, $user ) ) {
                 $options[self::OPT_UNBLUR] = 0;
+                $options[self::OPT_UNBLUR_GORE] = 0;
+                $options[self::OPT_UNBLUR_SEXUAL] = 0;
+                $options[self::OPT_UNBLUR_PROSE] = 0;
+                return;
             }
+
+            $effectivePreferences = self::getEffectiveUserNsfwPreferences( $services, $user );
+            foreach ( self::getAllNsfwPreferenceFlags() as $flag ) {
+                $optionName = self::getOptionNameForNsfwPreferenceFlag( $flag );
+                if ( $optionName !== null && array_key_exists( $optionName, $options ) ) {
+                    $effectivePreferences[$flag] = (bool)$options[$optionName];
+                }
+            }
+
+            foreach ( self::getAllNsfwPreferenceFlags() as $flag ) {
+                $optionName = self::getOptionNameForNsfwPreferenceFlag( $flag );
+                if ( $optionName !== null ) {
+                    $options[$optionName] = $effectivePreferences[$flag] ? 1 : 0;
+                }
+            }
+
+            $options[self::OPT_UNBLUR] = self::userHasEnabledAllNsfwPreferences( $effectivePreferences ) ? 1 : 0;
         }
     }
 
@@ -996,15 +1060,9 @@ JS;
     }
 
     private static function userWantsUnblur( MediaWikiServices $services, User $user ): bool {
-        return $user->isRegistered()
-            && self::isUserAllowedToUnblur( $services, $user )
-            && (bool)$services->getUserOptionsLookup()->getOption( $user, self::OPT_UNBLUR );
-    }
-
-    private static function userCanViewOriginalNsfwFile( MediaWikiServices $services, User $user ): bool {
-        // Reuse the extension's existing NSFW visibility decision so img_auth
-        // and the NSFW proxy follow the same age/right/preference gates as page rendering.
-        return self::userWantsUnblur( $services, $user );
+        return self::userHasEnabledAllNsfwPreferences(
+            self::getEffectiveUserNsfwPreferences( $services, $user )
+        );
     }
 
     private static function shouldUsePlaceholderReplacement(
@@ -1012,9 +1070,13 @@ JS;
         Title $fileTitle,
         User $user
     ): bool {
-        return $fileTitle->inNamespace( NS_FILE )
-            && self::isFileTitleMarkedNSFW( $fileTitle )
-            && !self::userCanViewOriginalNsfwFile( $services, $user );
+        if ( !$fileTitle->inNamespace( NS_FILE ) ) {
+            return false;
+        }
+
+        $requirements = self::getFileTitleVisibilityRequirements( $fileTitle );
+        return self::hasAnyNsfwRequirements( $requirements )
+            && !self::userMeetsNsfwRequirements( $services, $user, $requirements );
     }
 
     /* ============================================================
@@ -1022,6 +1084,213 @@ JS;
      * ========================================================== */
 
     public static function isFileTitleMarkedNSFW( Title $fileTitle ): bool {
+        return self::hasAnyNsfwRequirements(
+            self::getFileTitleVisibilityRequirements( $fileTitle )
+        );
+    }
+
+
+
+    public static function isContentTitleMarkedNSFW( Title $title ): bool {
+        return self::hasAnyNsfwRequirements(
+            self::getContentTitleVisibilityRequirements( $title )
+        );
+    }
+
+    private static function getAllNsfwPreferenceFlags(): array {
+        return [
+            self::PREF_GORE,
+            self::PREF_SEXUAL,
+            self::PREF_PROSE,
+        ];
+    }
+
+    private static function buildEmptyNsfwRequirements(): array {
+        return [
+            self::PREF_GORE => false,
+            self::PREF_SEXUAL => false,
+            self::PREF_PROSE => false,
+        ];
+    }
+
+    private static function buildAllNsfwRequirements(): array {
+        return [
+            self::PREF_GORE => true,
+            self::PREF_SEXUAL => true,
+            self::PREF_PROSE => true,
+        ];
+    }
+
+    private static function hasAnyNsfwRequirements( array $requirements ): bool {
+        foreach ( self::getAllNsfwPreferenceFlags() as $flag ) {
+            if ( !empty( $requirements[$flag] ) ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function userHasEnabledAllNsfwPreferences( array $preferences ): bool {
+        foreach ( self::getAllNsfwPreferenceFlags() as $flag ) {
+            if ( empty( $preferences[$flag] ) ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static function getOptionNameForNsfwPreferenceFlag( string $flag ): ?string {
+        switch ( $flag ) {
+            case self::PREF_GORE:
+                return self::OPT_UNBLUR_GORE;
+            case self::PREF_SEXUAL:
+                return self::OPT_UNBLUR_SEXUAL;
+            case self::PREF_PROSE:
+                return self::OPT_UNBLUR_PROSE;
+            default:
+                return null;
+        }
+    }
+
+    private static function getStoredUserCategoryPreference(
+        MediaWikiServices $services,
+        User $user,
+        string $flag
+    ): ?bool {
+        $optionName = self::getOptionNameForNsfwPreferenceFlag( $flag );
+        if ( $optionName === null ) {
+            return null;
+        }
+
+        $value = $services->getUserOptionsLookup()->getOption( $user, $optionName, null );
+        if ( $value === null || $value === '' ) {
+            return null;
+        }
+
+        return (bool)$value;
+    }
+
+    private static function getLegacyUserUnblurPreference( MediaWikiServices $services, User $user ): bool {
+        return (bool)$services->getUserOptionsLookup()->getOption( $user, self::OPT_UNBLUR, 0 );
+    }
+
+    private static function getEffectiveUserCategoryPreference(
+        MediaWikiServices $services,
+        User $user,
+        string $flag
+    ): bool {
+        if (
+            !$user->isRegistered()
+            || !self::isUserAllowedToUnblur( $services, $user )
+        ) {
+            return false;
+        }
+
+        $storedValue = self::getStoredUserCategoryPreference( $services, $user, $flag );
+        if ( $storedValue !== null ) {
+            return $storedValue;
+        }
+
+        return self::getLegacyUserUnblurPreference( $services, $user );
+    }
+
+    private static function getEffectiveUserNsfwPreferences(
+        MediaWikiServices $services,
+        User $user
+    ): array {
+        $preferences = self::buildEmptyNsfwRequirements();
+        foreach ( self::getAllNsfwPreferenceFlags() as $flag ) {
+            $preferences[$flag] = self::getEffectiveUserCategoryPreference( $services, $user, $flag );
+        }
+
+        return $preferences;
+    }
+
+    private static function userMeetsNsfwRequirements(
+        MediaWikiServices $services,
+        User $user,
+        array $requirements
+    ): bool {
+        if ( !self::hasAnyNsfwRequirements( $requirements ) ) {
+            return true;
+        }
+
+        if (
+            !$user->isRegistered()
+            || !self::isUserAllowedToUnblur( $services, $user )
+        ) {
+            return false;
+        }
+
+        $preferences = self::getEffectiveUserNsfwPreferences( $services, $user );
+        foreach ( self::getAllNsfwPreferenceFlags() as $flag ) {
+            if ( !empty( $requirements[$flag] ) && empty( $preferences[$flag] ) ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static function getFileTitleVisibilityRequirements( Title $fileTitle ): array {
+        static $memo = [];
+
+        if ( !$fileTitle->inNamespace( NS_FILE ) ) {
+            return self::buildEmptyNsfwRequirements();
+        }
+
+        $cacheKey = $fileTitle->getPrefixedDBkey();
+        if ( array_key_exists( $cacheKey, $memo ) ) {
+            return $memo[$cacheKey];
+        }
+
+        if (
+            self::fileTitleHasNsfwMarker( $fileTitle )
+            || self::titleHasCategory( $fileTitle, self::NSFW_FILE_CATEGORY_DBKEY )
+            || self::titleHasCategory( $fileTitle, self::NSFW_CATEGORY_DBKEY )
+        ) {
+            return $memo[$cacheKey] = self::buildAllNsfwRequirements();
+        }
+
+        $requirements = self::buildEmptyNsfwRequirements();
+        if ( self::titleHasCategory( $fileTitle, self::NSFW_GORE_CATEGORY_DBKEY ) ) {
+            $requirements[self::PREF_GORE] = true;
+        }
+
+        if ( self::titleHasCategory( $fileTitle, self::NSFW_SEXUAL_CATEGORY_DBKEY ) ) {
+            $requirements[self::PREF_SEXUAL] = true;
+        }
+
+        return $memo[$cacheKey] = $requirements;
+    }
+
+    private static function getContentTitleVisibilityRequirements( Title $title ): array {
+        static $memo = [];
+
+        if ( !$title || !$title->isContentPage() ) {
+            return self::buildEmptyNsfwRequirements();
+        }
+
+        $cacheKey = $title->getPrefixedDBkey();
+        if ( array_key_exists( $cacheKey, $memo ) ) {
+            return $memo[$cacheKey];
+        }
+
+        if ( self::titleHasCategory( $title, self::NSFW_CATEGORY_DBKEY ) ) {
+            return $memo[$cacheKey] = self::buildAllNsfwRequirements();
+        }
+
+        $requirements = self::buildEmptyNsfwRequirements();
+        if ( self::titleHasCategory( $title, self::NSFW_PROSE_CATEGORY_DBKEY ) ) {
+            $requirements[self::PREF_PROSE] = true;
+        }
+
+        return $memo[$cacheKey] = $requirements;
+    }
+
+    private static function fileTitleHasNsfwMarker( Title $fileTitle ): bool {
         static $memo = [];
 
         if ( !$fileTitle->inNamespace( NS_FILE ) ) {
@@ -1035,7 +1304,6 @@ JS;
 
         $services = MediaWikiServices::getInstance();
 
-        // 1) Marker in wikitext (still fine, but make it model-safe)
         try {
             $rev = $services->getRevisionLookup()->getRevisionByTitle( $fileTitle );
             if ( $rev ) {
@@ -1054,30 +1322,7 @@ JS;
             // Never break rendering because a parser/text read failed
         }
 
-        return $memo[$cacheKey] = self::titleHasCategory( $fileTitle, self::NSFW_FILE_CATEGORY_DBKEY )
-            || self::titleHasCategory( $fileTitle, self::NSFW_CATEGORY_DBKEY );
-    }
-
-
-
-    public static function isContentTitleMarkedNSFW( Title $title ): bool {
-        static $memo = [];
-
-        if ( !$title ) {
-            return false;
-        }
-
-        $cacheKey = $title->getPrefixedDBkey();
-        if ( array_key_exists( $cacheKey, $memo ) ) {
-            return $memo[$cacheKey];
-        }
-
-        $pageId = $title->getArticleID();
-        if ( !$pageId ) {
-            return $memo[$cacheKey] = false;
-        }
-
-        return $memo[$cacheKey] = self::titleHasCategory( $title, self::NSFW_CATEGORY_DBKEY );
+        return $memo[$cacheKey] = false;
     }
 
     private static function titleHasCategory( Title $title, string $categoryDbKey ): bool {
