@@ -1,6 +1,6 @@
 <?php
 
-use NsfwFilter\Hooks;
+use ContinuumNsfwFilter\Hooks;
 
 define( 'MW_NO_OUTPUT_COMPRESSION', 1 );
 define( 'MW_ENTRY_POINT', 'nsfwProxy' );

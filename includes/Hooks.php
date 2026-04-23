@@ -1,5 +1,5 @@
 <?php
-namespace NsfwFilter;
+namespace ContinuumNsfwFilter;
 
 if ( !defined( 'MEDIAWIKI' ) ) {
     die();
