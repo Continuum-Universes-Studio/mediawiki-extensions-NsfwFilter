@@ -33,7 +33,6 @@ class Hooks {
     private const NSFW_FILE_CATEGORY_DBKEY = 'NSFW_Files'; // Category:NSFW_Files
     private const NSFW_GORE_CATEGORY_DBKEY = 'NSFW_Gore'; // Category:NSFW Gore
     private const NSFW_SEXUAL_CATEGORY_DBKEY = 'NSFW_Sexual'; // Category:NSFW Sexual
-    private const NSFW_PROSE_CATEGORY_DBKEY = 'NSFW_Prose'; // Category:NSFW Prose
     private const UNBLUR_RIGHT = 'nsfw-unblur';
     private const PLACEHOLDER_CONFIG = 'NsfwFilterPlaceholderImage';
     private const NSFW_ROBOTS_TAG = 'noindex, noimageindex, noarchive';
@@ -42,13 +41,11 @@ class Hooks {
     private const OPT_UNBLUR           = 'nsfwblurred';
     private const OPT_UNBLUR_GORE      = 'nsfwblurred_gore';
     private const OPT_UNBLUR_SEXUAL    = 'nsfwblurred_sexual';
-    private const OPT_UNBLUR_PROSE     = 'nsfwblurred_prose';
     private const OPT_BIRTHDATE        = 'nsfw_birthdate';
     private const OPT_BIRTHDATE_LEGACY = 'nsfw_birthyear';
 
     private const PREF_GORE = 'gore';
     private const PREF_SEXUAL = 'sexual';
-    private const PREF_PROSE = 'prose';
 
     private const MIN_AGE = 18;
 
@@ -1362,16 +1359,6 @@ JS;
             'validation-callback' => [ self::class, 'validateNsfwUnblurPreference' ],
         ];
 
-        $preferences[self::OPT_UNBLUR_PROSE] = [
-            'type'          => 'toggle',
-            'label-message' => 'tog-nsfwblurred-prose',
-            'section'       => 'rendering/files',
-            'default'       => self::getEffectiveUserCategoryPreference( $services, $user, self::PREF_PROSE ),
-            'disabled'      => !$canSeeNSFW,
-            'help-message'  => !$canSeeNSFW ? 'nsfwblur-pref-nsfw-access' : null,
-            'validation-callback' => [ self::class, 'validateNsfwUnblurPreference' ],
-        ];
-
         return true;
     }
 
@@ -1612,8 +1599,7 @@ JS;
             if ( $user instanceof User ) {
                 $prefs = self::getEffectiveUserNsfwPreferences( $services, $user );
                 $confstr .= '!nsfw:g' . (int)$prefs[self::PREF_GORE]
-                    . 's' . (int)$prefs[self::PREF_SEXUAL]
-                    . 'p' . (int)$prefs[self::PREF_PROSE];
+                    . 's' . (int)$prefs[self::PREF_SEXUAL];
             }
         } catch ( \Throwable $e ) {
             // ignore
@@ -1644,7 +1630,6 @@ JS;
                 $options[self::OPT_UNBLUR] = 0;
                 $options[self::OPT_UNBLUR_GORE] = 0;
                 $options[self::OPT_UNBLUR_SEXUAL] = 0;
-                $options[self::OPT_UNBLUR_PROSE] = 0;
                 return;
             }
 
@@ -1750,7 +1735,6 @@ JS;
         return [
             self::PREF_GORE,
             self::PREF_SEXUAL,
-            self::PREF_PROSE,
         ];
     }
 
@@ -1758,7 +1742,6 @@ JS;
         return [
             self::PREF_GORE => false,
             self::PREF_SEXUAL => false,
-            self::PREF_PROSE => false,
         ];
     }
 
@@ -1766,7 +1749,6 @@ JS;
         return [
             self::PREF_GORE => true,
             self::PREF_SEXUAL => true,
-            self::PREF_PROSE => true,
         ];
     }
 
@@ -1796,8 +1778,6 @@ JS;
                 return self::OPT_UNBLUR_GORE;
             case self::PREF_SEXUAL:
                 return self::OPT_UNBLUR_SEXUAL;
-            case self::PREF_PROSE:
-                return self::OPT_UNBLUR_PROSE;
             default:
                 return null;
         }
@@ -1931,12 +1911,7 @@ JS;
             return $memo[$cacheKey] = self::buildAllNsfwRequirements();
         }
 
-        $requirements = self::buildEmptyNsfwRequirements();
-        if ( self::titleHasCategory( $title, self::NSFW_PROSE_CATEGORY_DBKEY ) ) {
-            $requirements[self::PREF_PROSE] = true;
-        }
-
-        return $memo[$cacheKey] = $requirements;
+        return $memo[$cacheKey] = self::buildEmptyNsfwRequirements();
     }
 
     private static function fileTitleHasNsfwMarker( Title $fileTitle ): bool {

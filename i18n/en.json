@@ -8,7 +8,6 @@
     "tog-nsfwblurred": "Display filtered images",
     "tog-nsfwblurred-gore": "Show NSFW gore content",
     "tog-nsfwblurred-sexual": "Show NSFW sexual content",
-    "tog-nsfwblurred-prose": "Show NSFW prose content",
     "nsfwblur-pref-nsfw-age": "You must be at least 18 years old (based on your profile) to change this setting.",
     "nsfwblur-pref-nsfw-access": "You must have the nsfw-unblur permission and be at least 18 years old to change this setting.",
     "nsfwblur-birthdate-label": "Birth date (used for NSFW gating)",

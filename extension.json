@@ -2,7 +2,7 @@
   "name": "Continuum NSFW Filter",
   "version": "2.6.0",
   "author": "OnikaGPT 4o, Christian Daniel Jensen, ChatGPT-5.2",
-  "url": "https://www.mediawiki.org/wiki/Extension:ContinuumNsfwFilter",
+  "url": "https://continuum-universes-wiki.com/Extension:ContinuumNsfwFilter",
   "license-name": "GPL-3.0-or-later",
   "descriptionmsg": "nsfwblur-desc",
   "type": "other",
@@ -22,6 +22,7 @@
     }
   },
   "AutoloadClasses": {
+    "ContinuumUniverses\\ContinuumNsfwFilter\\MarkExistingUsersNsfwUnblur": "maintenance/markExistingUsersNsfwUnblur.php",
     "ContinuumUniverses\\ContinuumNsfwFilter\\Hooks": "includes/Hooks.php"
   },
   "MessagesDirs": {
